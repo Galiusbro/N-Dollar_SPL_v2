@@ -20,4 +20,6 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 [dependencies]
 anchor-lang = { version = "0.31.0", features = ["init-if-needed"] }
 anchor-spl = { version = "0.31.0", features = ["metadata"] }
+bonding-curve = { path = "../bonding-curve", features = ["cpi"] }
+referral-system = { path = "../referral-system", features = ["cpi"] }
 

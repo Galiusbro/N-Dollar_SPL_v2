@@ -14,7 +14,6 @@ pub mod referral_system {
         coin_mint: Pubkey,
     ) -> Result<()> {
         let referral_data = &mut ctx.accounts.referral_data;
-        let user_data = &mut ctx.accounts.user_data;
         
         // Проверка, что реферальная ссылка действительна
         require!(
@@ -22,8 +21,28 @@ pub mod referral_system {
             ReferralError::InvalidReferralLink
         );
         
+        // Проверка на двойную регистрацию (дополнительная проверка)
+        let user_key = ctx.accounts.user.key();
+        let coin_mint_ref = referral_data.coin_mint;
+        
+        let user_pda_seeds = &[
+            b"user_data".as_ref(),
+            user_key.as_ref(),
+            coin_mint_ref.as_ref(),
+        ];
+        
+        let user_data_key = ctx.accounts.user_data.key();
+        let (user_pda, _) = Pubkey::find_program_address(user_pda_seeds, ctx.program_id);
+        
+        // Проверяем, что аккаунт на самом деле создается впервые
+        require!(
+            user_pda == user_data_key,
+            ReferralError::AlreadyRegistered
+        );
+        
         // Инициализация данных пользователя
-        user_data.user = ctx.accounts.user.key();
+        let user_data = &mut ctx.accounts.user_data;
+        user_data.user = user_key;
         user_data.referrer = referral_data.creator;
         user_data.coin_mint = coin_mint;
         user_data.registration_time = Clock::get()?.unix_timestamp;
@@ -55,6 +74,25 @@ pub mod referral_system {
         require!(
             user_data.referrer == referral_data.creator,
             ReferralError::InvalidReferralRelationship
+        );
+        
+        // Проверка, что все токен-аккаунты соответствуют нужному mint
+        require!(
+            ctx.accounts.reward_source.mint == user_data.coin_mint &&
+            ctx.accounts.user_token_account.mint == user_data.coin_mint &&
+            ctx.accounts.referrer_token_account.mint == user_data.coin_mint,
+            ReferralError::InvalidTokenAccount
+        );
+        
+        // Проверка, что токен-аккаунты принадлежат соответствующим владельцам
+        require!(
+            ctx.accounts.user_token_account.owner == user_data.user,
+            ReferralError::InvalidTokenAccountOwner
+        );
+        
+        require!(
+            ctx.accounts.referrer_token_account.owner == user_data.referrer,
+            ReferralError::InvalidTokenAccountOwner
         );
         
         // Начисляем вознаграждение пользователю
@@ -154,7 +192,7 @@ pub struct RegisterReferral<'info> {
     #[account(
         mut,
         seeds = [b"referral_data".as_ref(), referral_data.coin_mint.as_ref()],
-        bump
+        bump = referral_data.bump
     )]
     pub referral_data: Account<'info, ReferralData>,
     
@@ -179,7 +217,7 @@ pub struct RewardReferral<'info> {
     #[account(
         mut,
         seeds = [b"referral_data".as_ref(), referral_data.coin_mint.as_ref()],
-        bump
+        bump = referral_data.bump
     )]
     pub referral_data: Account<'info, ReferralData>,
     
@@ -196,16 +234,10 @@ pub struct RewardReferral<'info> {
     )]
     pub reward_source: Account<'info, TokenAccount>,
     
-    #[account(
-        mut,
-        constraint = user_token_account.owner == user_data.user
-    )]
+    #[account(mut)]
     pub user_token_account: Account<'info, TokenAccount>,
     
-    #[account(
-        mut,
-        constraint = referrer_token_account.owner == user_data.referrer
-    )]
+    #[account(mut)]
     pub referrer_token_account: Account<'info, TokenAccount>,
     
     pub token_program: Program<'info, Token>,
@@ -216,7 +248,7 @@ pub struct RewardReferral<'info> {
 pub struct CheckReferralStatus<'info> {
     #[account(
         seeds = [b"referral_data".as_ref(), referral_data.coin_mint.as_ref()],
-        bump
+        bump = referral_data.bump
     )]
     pub referral_data: Account<'info, ReferralData>,
 }
@@ -271,4 +303,10 @@ pub enum ReferralError {
     UnauthorizedAccess,
     #[msg("Недействительные отношения реферала")]
     InvalidReferralRelationship,
+    #[msg("Пользователь уже зарегистрирован")]
+    AlreadyRegistered,
+    #[msg("Недействительный токен-аккаунт")]
+    InvalidTokenAccount,
+    #[msg("Недействительный владелец токен-аккаунта")]
+    InvalidTokenAccountOwner,
 }

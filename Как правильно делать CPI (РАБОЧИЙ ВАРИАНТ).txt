@@ -1,0 +1,244 @@
+// n_dollar lib.rs
+
+#![allow(unexpected_cfgs)]
+use anchor_lang::prelude::*;
+use anchor_spl::token::{self, MintTo};
+
+declare_id!("9KpQTudrEpukyRvjMcjKSeNyLVjajnBKfj3jqfp822yJ");
+
+#[program]
+pub mod n_dollar {
+    use super::*;
+
+    pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
+        msg!("Initialized n_dollar token program");
+        Ok(())
+    }
+
+    pub fn mint_token(ctx: Context<MintToken>, amount: u64) -> Result<()> {
+        msg!("Minting {} tokens to {}", amount, ctx.accounts.token_account.key());
+        
+        // Create CPI context for minting tokens
+        let cpi_accounts: MintTo<'_> = MintTo {
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.token_account.to_account_info(),
+            authority: ctx.accounts.authority.to_account_info(),
+        };
+        
+        let cpi_program: AccountInfo<'_> = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx: CpiContext<'_, '_, '_, '_, MintTo<'_>> = CpiContext::new(cpi_program, cpi_accounts);
+        
+        // Execute the mint
+        token::mint_to(cpi_ctx, amount)?;
+        
+        msg!("Token minting completed successfully");
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct MintToken<'info> {
+    /// CHECK: This is the mint account from the SPL token program
+    #[account(mut)]
+    pub mint: AccountInfo<'info>,
+    
+    /// CHECK: This is the token account from the SPL token program
+    #[account(mut)]
+    pub token_account: AccountInfo<'info>,
+    
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// CHECK: This is the token program from the SPL
+    pub token_program: AccountInfo<'info>,
+}
+  // token_test lib.rs  #![allow(unexpected_cfgs)]
+use anchor_lang::prelude::*;
+
+declare_id!("AWsoG3wDDszEAyXnc8Sbi8kdjBJpnwiDdGuj7WMc87be");
+
+#[program]
+pub mod token_test {
+    use super::*;
+
+    pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
+        msg!("Initialized token_test program");
+        Ok(())
+    }
+
+    pub fn mint_via_cpi(ctx: Context<MintViaCpi>, amount: u64) -> Result<()> {
+        msg!("token_test program making CPI call to n_dollar to mint {} tokens", amount);
+        
+        // Calculate instruction discriminator for "mint_token"
+        let disc = anchor_lang::solana_program::hash::hash("global:mint_token".as_bytes());
+        let mint_token_discriminator = disc.to_bytes()[..8].to_vec();
+        
+        // Prepare instruction data with proper discriminator
+        let mut ix_data = mint_token_discriminator;
+        ix_data.extend_from_slice(&amount.to_le_bytes());
+        
+        // Define the accounts for the CPI call
+        let accounts = vec![
+            AccountMeta::new(ctx.accounts.mint.key(), false),
+            AccountMeta::new(ctx.accounts.token_account.key(), false),
+            AccountMeta::new(ctx.accounts.authority.key(), true),  // Changed from new_readonly to new to make it mutable
+            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
+        ];
+        
+        // Create the instruction
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.n_dollar_program.key(),
+            accounts,
+            data: ix_data,
+        };
+        
+        // Execute the instruction
+        anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.token_account.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.n_dollar_program.to_account_info(),
+            ],
+        )?;
+        
+        msg!("CPI mint completed successfully");
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct MintViaCpi<'info> {
+    /// The mint account
+    /// CHECK: This is the mint account from the SPL token program
+    #[account(mut)]
+    pub mint: AccountInfo<'info>,
+    
+    /// The token account to mint to
+    /// CHECK: This is the token account from the SPL token program
+    #[account(mut)]
+    pub token_account: AccountInfo<'info>,
+    
+    /// The authority for the mint
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// The SPL Token program
+    /// CHECK: This is the SPL token program
+    pub token_program: AccountInfo<'info>,
+    
+    /// The n_dollar program to call
+    /// CHECK: We're using this account as a program ID
+    pub n_dollar_program: AccountInfo<'info>,
+}
+
+
+//user_token lib.rs
+
+#![allow(unexpected_cfgs)]
+use anchor_lang::prelude::*;
+
+declare_id!("3TEa5r7L6cjVqvqr6e6jjZWoa2KUCQrXdpMGSKF6Js2R");
+
+#[program]
+pub mod user_token {
+    use super::*;
+
+    pub fn initialize(_ctx: Context<Initialize>) -> Result<()> {
+        msg!("Initialized user_token program");
+        Ok(())
+    }
+
+    pub fn nested_mint(ctx: Context<NestedMint>, amount: u64) -> Result<()> {
+        msg!("user_token program making CPI call to token_test to mint {} tokens", amount);
+        
+        // Calculate instruction discriminator for "mint_via_cpi"
+        let disc = anchor_lang::solana_program::hash::hash("global:mint_via_cpi".as_bytes());
+        let mint_via_cpi_discriminator: Vec<u8> = disc.to_bytes()[..8].to_vec();
+        
+        // Prepare instruction data with proper discriminator
+        let mut ix_data: Vec<u8> = mint_via_cpi_discriminator;
+        ix_data.extend_from_slice(&amount.to_le_bytes());
+        
+        // Define the accounts for the CPI call
+        let accounts: Vec<AccountMeta> = vec![
+            AccountMeta::new(ctx.accounts.mint.key(), false),
+            AccountMeta::new(ctx.accounts.token_account.key(), false),
+            AccountMeta::new(ctx.accounts.authority.key(), true),
+            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.n_dollar_program.key(), false),
+        ];
+        
+        // Create the instruction
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.token_test_program.key(),
+            accounts,
+            data: ix_data,
+        };
+        
+        // Execute the instruction
+        anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.token_account.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.n_dollar_program.to_account_info(),
+                ctx.accounts.token_test_program.to_account_info(),
+            ],
+        )?;
+        
+        msg!("Nested CPI mint completed successfully");
+        Ok(())
+    }
+}
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct NestedMint<'info> {
+    /// The mint account
+    /// CHECK: This is the mint account from the SPL token program
+    #[account(mut)]
+    pub mint: AccountInfo<'info>,
+    
+    /// The token account to mint to
+    /// CHECK: This is the token account from the SPL token program
+    #[account(mut)]
+    pub token_account: AccountInfo<'info>,
+    
+    /// The authority for the mint
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    
+    /// The SPL Token program
+    /// CHECK: This is the SPL token program
+    pub token_program: AccountInfo<'info>,
+    
+    /// The n_dollar program that will be called by token_test
+    /// CHECK: We're using this account as a program ID
+    pub n_dollar_program: AccountInfo<'info>,
+    
+    /// The token_test program we'll call via CPI
+    /// CHECK: We're using this account as a program ID
+    pub token_test_program: AccountInfo<'info>,
+}

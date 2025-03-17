@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "admin_control"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+]
+
+[[package]]
 name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -347,6 +355,7 @@ dependencies = [
 name = "bonding-curve"
 version = "0.1.0"
 dependencies = [
+ "admin_control",
  "anchor-lang",
  "anchor-spl",
 ]
@@ -688,6 +697,8 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "bonding-curve",
+ "referral-system",
 ]
 
 [[package]]
@@ -926,6 +937,7 @@ dependencies = [
 name = "n-dollar-token"
 version = "0.1.0"
 dependencies = [
+ "admin_control",
  "anchor-lang",
  "anchor-spl",
 ]
@@ -2715,8 +2727,11 @@ dependencies = [
 name = "trading-exchange"
 version = "0.1.0"
 dependencies = [
+ "admin_control",
  "anchor-lang",
  "anchor-spl",
+ "bonding-curve",
+ "liquidity-manager",
 ]
 
 [[package]]

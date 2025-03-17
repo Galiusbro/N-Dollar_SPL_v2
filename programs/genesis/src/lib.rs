@@ -17,7 +17,22 @@ pub mod genesis {
         symbol: String,
         uri: String,
         ndollar_payment: u64,
+        admin: Option<Pubkey>,
     ) -> Result<()> {
+        // Проверка длины и содержимого имени и символа
+        require!(name.len() >= 3, GenesisError::NameTooShort);
+        require!(name.len() <= 40, GenesisError::NameTooLong);
+        require!(symbol.len() >= 2, GenesisError::SymbolTooShort);
+        require!(symbol.len() <= 8, GenesisError::SymbolTooLong);
+        
+        // Проверка на допустимые символы (буквы, цифры, пробелы и некоторые специальные символы)
+        let valid_chars = |s: &str| -> bool {
+            s.chars().all(|c| c.is_alphanumeric() || c.is_whitespace() || "-_.:;,?!()[]{}\"'".contains(c))
+        };
+        
+        require!(valid_chars(&name), GenesisError::InvalidCharacters);
+        require!(valid_chars(&symbol), GenesisError::InvalidCharacters);
+        
         // Сначала берем плату в N-Dollar токенах
         let creator = &ctx.accounts.creator;
         let ndollar_token_account = &ctx.accounts.ndollar_token_account;
@@ -46,6 +61,14 @@ pub mod genesis {
         coin_data.creation_time = Clock::get()?.unix_timestamp;
         coin_data.total_supply = 0;
         coin_data.referral_link_active = false;
+        
+        // Устанавливаем администратора
+        // Если передан, используем его, иначе создатель становится администратором
+        coin_data.admin = match admin {
+            Some(admin_pubkey) => admin_pubkey,
+            None => creator.key(),
+        };
+        
         coin_data.bump = ctx.bumps.coin_data;
         
         // Установка метаданных через MetaplexMetadata
@@ -103,8 +126,60 @@ pub mod genesis {
         // Обновляем информацию о токенах
         coin_data.total_supply = initial_supply;
         
-        // CPI вызов для инициализации бондинговой кривой (тут будет вызов контракта bonding-curve)
-        // Это будет добавлено позже после реализации bonding-curve модуля
+        // CPI вызов для инициализации бондинговой кривой
+        let power: u8 = 2; // Стандартный показатель степени для кривой
+        let initial_price: u64 = 5_000_000; // Начальная цена 0.00005 N-Dollar (с учетом 9 десятичных знаков)
+        let fee_percent: u16 = 50; // 0.5% комиссия (в базисных пунктах)
+        
+        // Рассчитываем дискриминатор для инструкции initialize_bonding_curve
+        let disc = anchor_lang::solana_program::hash::hash("global:initialize_bonding_curve".as_bytes());
+        let initialize_bonding_curve_discriminator = disc.to_bytes()[..8].to_vec();
+        
+        // Готовим данные для инструкции
+        let mut ix_data = initialize_bonding_curve_discriminator;
+        ix_data.extend_from_slice(&ctx.accounts.mint.key().to_bytes()); // coin_mint
+        ix_data.extend_from_slice(&initial_price.to_le_bytes()); // initial_price
+        
+        // Добавляем опциональные параметры как Some(value)
+        ix_data.push(1); // Для Some(power)
+        ix_data.extend_from_slice(&power.to_le_bytes());
+        
+        ix_data.push(1); // Для Some(fee_percent)
+        ix_data.extend_from_slice(&fee_percent.to_le_bytes());
+        
+        // Определяем аккаунты для CPI вызова
+        let ix_accounts = vec![
+            AccountMeta::new(ctx.accounts.creator.key(), true), // creator (signer)
+            AccountMeta::new(ctx.accounts.bonding_curve.key(), false), // bonding_curve PDA
+            AccountMeta::new(ctx.accounts.mint.key(), false), // coin_mint
+            AccountMeta::new(ctx.accounts.ndollar_mint.key(), false), // ndollar_mint
+            AccountMeta::new(ctx.accounts.liquidity_pool.key(), false), // liquidity_pool
+            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false), // token_program
+            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false), // system_program
+            AccountMeta::new_readonly(ctx.accounts.rent.key(), false), // rent
+        ];
+        
+        // Создаем инструкцию
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.bonding_curve_program.key(),
+            accounts: ix_accounts,
+            data: ix_data,
+        };
+        
+        // Выполняем инструкцию
+        anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                ctx.accounts.creator.to_account_info(),
+                ctx.accounts.bonding_curve.to_account_info(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.ndollar_mint.to_account_info(),
+                ctx.accounts.liquidity_pool.to_account_info(),
+                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+            ],
+        )?;
         
         msg!("Мемкоин успешно создан: {}", coin_data.symbol);
         Ok(())
@@ -117,11 +192,18 @@ pub mod genesis {
         ndollar_payment: u64,
     ) -> Result<()> {
         let coin_data = &ctx.accounts.coin_data;
-        let creator = &ctx.accounts.creator;
+        let admin = &ctx.accounts.admin;
+        let creator = ctx.accounts.creator.key();
         
-        // Проверка, что вызывающий является создателем монеты
+        // Проверка, что вызывающий является администратором монеты
         require!(
-            coin_data.creator == creator.key(),
+            coin_data.admin == admin.key(),
+            GenesisError::NotCoinAdmin
+        );
+        
+        // Проверка, что токены покупаются для создателя
+        require!(
+            coin_data.creator == creator,
             GenesisError::NotCoinCreator
         );
         
@@ -139,7 +221,7 @@ pub mod genesis {
         let transfer_instruction = anchor_spl::token::Transfer {
             from: ctx.accounts.ndollar_token_account.to_account_info(),
             to: ctx.accounts.fees_account.to_account_info(),
-            authority: creator.to_account_info(),
+            authority: admin.to_account_info(),
         };
         
         let cpi_ctx = CpiContext::new(
@@ -181,12 +263,12 @@ pub mod genesis {
         ctx: Context<GenerateReferralLink>,
     ) -> Result<()> {
         let coin_data = &mut ctx.accounts.coin_data;
-        let creator = &ctx.accounts.creator;
+        let authority = &ctx.accounts.authority;
         
-        // Проверка, что вызывающий является создателем монеты
+        // Проверка, что вызывающий является администратором монеты
         require!(
-            coin_data.creator == creator.key(),
-            GenesisError::NotCoinCreator
+            coin_data.admin == authority.key(),
+            GenesisError::NotCoinAdmin
         );
         
         // Проверка, что реферальная ссылка еще не активирована
@@ -198,7 +280,7 @@ pub mod genesis {
         // Инициализируем реферальный аккаунт
         let referral_data = &mut ctx.accounts.referral_data;
         referral_data.coin_mint = coin_data.mint;
-        referral_data.creator = creator.key();
+        referral_data.creator = coin_data.creator;
         referral_data.creation_time = Clock::get()?.unix_timestamp;
         referral_data.referred_users = 0;
         referral_data.total_rewards = 0;
@@ -207,15 +289,69 @@ pub mod genesis {
         // Отмечаем, что реферальная ссылка активирована
         coin_data.referral_link_active = true;
         
-        // CPI для инициализации в модуле реферальной системы можно будет добавить позже
+        // CPI для инициализации в модуле реферальной системы
+        // Рассчитываем дискриминатор для инструкции initialize_referral_system
+        let disc = anchor_lang::solana_program::hash::hash("global:initialize_referral_system".as_bytes());
+        let initialize_referral_system_discriminator = disc.to_bytes()[..8].to_vec();
+        
+        // Готовим данные для инструкции
+        let mut ix_data = initialize_referral_system_discriminator;
+        ix_data.extend_from_slice(&ctx.accounts.mint.key().to_bytes()); // coin_mint
+        
+        // Определяем аккаунты для CPI вызова
+        let ix_accounts = vec![
+            AccountMeta::new(ctx.accounts.authority.key(), true), // authority (signer)
+            AccountMeta::new(ctx.accounts.referral_system.key(), false), // referral_system PDA
+            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false), // system_program
+            AccountMeta::new_readonly(ctx.accounts.rent.key(), false), // rent
+        ];
+        
+        // Создаем инструкцию
+        let ix = anchor_lang::solana_program::instruction::Instruction {
+            program_id: ctx.accounts.referral_system_program.key(),
+            accounts: ix_accounts,
+            data: ix_data,
+        };
+        
+        // Выполняем инструкцию
+        anchor_lang::solana_program::program::invoke(
+            &ix,
+            &[
+                ctx.accounts.authority.to_account_info(),
+                ctx.accounts.referral_system.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.rent.to_account_info(),
+            ],
+        )?;
         
         msg!("Реферальная ссылка сгенерирована для монеты: {}", coin_data.symbol);
+        Ok(())
+    }
+
+    /// Передача административных прав другому пользователю
+    pub fn transfer_admin_rights(
+        ctx: Context<TransferAdminRights>,
+        new_admin: Pubkey,
+    ) -> Result<()> {
+        let coin_data = &mut ctx.accounts.coin_data;
+        let current_admin = &ctx.accounts.current_admin;
+        
+        // Проверка, что вызывающий является текущим администратором
+        require!(
+            coin_data.admin == current_admin.key(),
+            GenesisError::NotCoinAdmin
+        );
+        
+        // Обновляем администратора
+        coin_data.admin = new_admin;
+        
+        msg!("Права администратора переданы новому пользователю: {}", new_admin);
         Ok(())
     }
 }
 
 #[derive(Accounts)]
-#[instruction(name: String, symbol: String, uri: String, ndollar_payment: u64)]
+#[instruction(name: String, symbol: String, uri: String, ndollar_payment: u64, admin: Option<Pubkey>)]
 pub struct CreateCoin<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
@@ -230,11 +366,11 @@ pub struct CreateCoin<'info> {
     
     /// CHECK: Аккаунт метаданных, инициализируется через CPI
     #[account(mut)]
-    pub metadata: UncheckedAccount<'info>,
+    pub metadata: AccountInfo<'info>,
     
     /// CHECK: Authority для метаданных
     #[account(mut)]
-    pub mint_authority: UncheckedAccount<'info>,
+    pub mint_authority: AccountInfo<'info>,
     
     #[account(
         init,
@@ -262,10 +398,24 @@ pub struct CreateCoin<'info> {
     )]
     pub creator_token_account: Account<'info, TokenAccount>,
     
+    /// Mint токена N-Dollar
+    pub ndollar_mint: Account<'info, Mint>,
+    
+    /// CHECK: Это PDA аккаунт bonding_curve, который будет инициализирован через CPI
+    #[account(mut)]
+    pub bonding_curve: AccountInfo<'info>,
+    
+    /// CHECK: Аккаунт ликвидности для бондинговой кривой
+    #[account(mut)]
+    pub liquidity_pool: AccountInfo<'info>,
+    
+    /// CHECK: Программа Bonding Curve
+    pub bonding_curve_program: AccountInfo<'info>,
+    
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     /// CHECK: Это токен ассоциированная программа
-    pub associated_token_program: UncheckedAccount<'info>,
+    pub associated_token_program: AccountInfo<'info>,
     /// CHECK: Метаплекс программа метаданных
     pub metadata_program: Program<'info, Metadata>,
     pub rent: Sysvar<'info, Rent>,
@@ -274,7 +424,10 @@ pub struct CreateCoin<'info> {
 #[derive(Accounts)]
 pub struct PurchaseFounderOption<'info> {
     #[account(mut)]
-    pub creator: Signer<'info>,
+    pub admin: Signer<'info>,
+    
+    /// CHECK: Адрес создателя монеты
+    pub creator: AccountInfo<'info>,
     
     #[account(
         mut,
@@ -291,7 +444,7 @@ pub struct PurchaseFounderOption<'info> {
     
     #[account(
         mut,
-        constraint = ndollar_token_account.owner == creator.key()
+        constraint = ndollar_token_account.owner == admin.key()
     )]
     pub ndollar_token_account: Account<'info, TokenAccount>,
     
@@ -312,7 +465,7 @@ pub struct PurchaseFounderOption<'info> {
 #[derive(Accounts)]
 pub struct GenerateReferralLink<'info> {
     #[account(mut)]
-    pub creator: Signer<'info>,
+    pub authority: Signer<'info>,
     
     #[account(
         constraint = mint.key() == coin_data.mint
@@ -322,19 +475,46 @@ pub struct GenerateReferralLink<'info> {
     #[account(
         mut,
         seeds = [b"coin_data".as_ref(), mint.key().as_ref()],
-        bump = coin_data.bump,
-        constraint = coin_data.creator == creator.key()
+        bump = coin_data.bump
     )]
     pub coin_data: Account<'info, CoinData>,
     
     #[account(
         init,
-        payer = creator,
+        payer = authority,
         seeds = [b"referral_data".as_ref(), mint.key().as_ref()],
         bump,
         space = 8 + ReferralData::SPACE
     )]
     pub referral_data: Account<'info, ReferralData>,
+    
+    /// CHECK: Это PDA аккаунт referral_system, который будет инициализирован через CPI
+    #[account(mut)]
+    pub referral_system: AccountInfo<'info>,
+    
+    /// CHECK: Программа Referral System
+    pub referral_system_program: AccountInfo<'info>,
+    
+    pub system_program: Program<'info, System>,
+    pub rent: Sysvar<'info, Rent>,
+}
+
+#[derive(Accounts)]
+pub struct TransferAdminRights<'info> {
+    #[account(mut)]
+    pub current_admin: Signer<'info>,
+    
+    #[account(
+        constraint = mint.key() == coin_data.mint
+    )]
+    pub mint: Account<'info, Mint>,
+    
+    #[account(
+        mut,
+        seeds = [b"coin_data".as_ref(), mint.key().as_ref()],
+        bump = coin_data.bump
+    )]
+    pub coin_data: Account<'info, CoinData>,
     
     pub system_program: Program<'info, System>,
 }
@@ -348,13 +528,14 @@ pub struct CoinData {
     pub creation_time: i64,
     pub total_supply: u64,
     pub referral_link_active: bool,
+    pub admin: Pubkey,
     pub bump: u8,
 }
 
 impl CoinData {
     // Размер для хранения строковых полей (название и символ) может быть динамическим
     // но мы выделим немного больше чтобы быть уверенными
-    pub const SPACE: usize = 32 + 32 + 50 + 10 + 8 + 8 + 1 + 1;
+    pub const SPACE: usize = 32 + 32 + 50 + 10 + 8 + 8 + 1 + 32 + 1;
 }
 
 #[account]
@@ -379,4 +560,16 @@ pub enum GenesisError {
     ExceedsFounderAllocation,
     #[msg("Реферальная ссылка уже активна")]
     ReferralLinkAlreadyActive,
+    #[msg("Название токена слишком короткое (минимум 3 символа)")]
+    NameTooShort,
+    #[msg("Название токена слишком длинное (максимум 40 символов)")]
+    NameTooLong,
+    #[msg("Символ токена слишком короткий (минимум 2 символа)")]
+    SymbolTooShort,
+    #[msg("Символ токена слишком длинный (максимум 8 символов)")]
+    SymbolTooLong,
+    #[msg("Название или символ содержат недопустимые символы")]
+    InvalidCharacters,
+    #[msg("Вы не являетесь администратором этой монеты")]
+    NotCoinAdmin,
 }

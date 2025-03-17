@@ -6,6 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
+admin_control = "EH6KMczMwjBNHUougk6oUU2PTF7aUxzJF1hbwyEdRnJd"
 bonding-curve = "HgiiaxwngpLK7jS3hC5EYXz8JkgSpMcA1xdaRc7tCqTL"
 genesis = "9FtGUvKzUZ9MFKYWnj4hsNLomFVopjGtznp52pMEWY8D"
 liquidity-manager = "4uP4rbMsgqMf9GKSAbbiDKKLJ1a2Rp4SEYE5jdhiVYLU"
@@ -17,8 +18,7 @@ trading-exchange = "7i7EpxhmCxmDhBvcTNFVXqq2SRQNt7HG98ANxRdcF6Dh"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
-# cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

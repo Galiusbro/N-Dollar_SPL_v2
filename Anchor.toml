@@ -1,0 +1,25 @@
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+bonding-curve = "HgiiaxwngpLK7jS3hC5EYXz8JkgSpMcA1xdaRc7tCqTL"
+genesis = "9FtGUvKzUZ9MFKYWnj4hsNLomFVopjGtznp52pMEWY8D"
+liquidity-manager = "4uP4rbMsgqMf9GKSAbbiDKKLJ1a2Rp4SEYE5jdhiVYLU"
+n-dollar-token = "2MiMzfH55kTC9tNM8LQFLzC8GbduTMTe5SyTadBi33cL"
+referral-system = "Cf8bAqCzB76XVY7Dmj1M6JTuQP7Z7ziSmVnsNy7Sb7Nh"
+trading-exchange = "7i7EpxhmCxmDhBvcTNFVXqq2SRQNt7HG98ANxRdcF6Dh"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+# cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

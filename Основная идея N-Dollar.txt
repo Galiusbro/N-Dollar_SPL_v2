@@ -1,0 +1,181 @@
+N-Dollar Exchange & Coin Creation Platform Specifications 1. Introduction and Overview
+Project Vision:
+Develop a decentralized exchange and coin creation platform on the Solana blockchain. Users launch their own meme coins via a Telegram-based DAO interface using N-Dollar as the primary currency. The system employs a symmetric bonding curve for price discovery and leverages a simplified coin creation process where fees are paid entirely in N-Dollar. All incoming funds from N-Dollar purchases (via USDT, TON, BTC, SOL, or bank transfers) are automatically converted into a liquidity pool that pairs N-Dollar with Solana. Additionally, each coin creator receives a unique referral link; when new users sign up through that link, both the creator and the new user receive 1 coin of the created coin.
+Key Objectives:
+• Enable rapid coin creation with fees paid solely in N-Dollar.
+• Build robust liquidity by channeling 100% of N-Dollar proceeds into an N-Dollar/SOL liquidity pool.
+• Utilize a symmetric bonding curve for controlled, exponential price discovery.
+• Integrate TON-based purchases for N-Dollar via Telegram Wallet.
+• Incentivize coin promotion with a targeted referral mechanism that rewards both parties.
+• Operate exclusively on Solana for speed, low fees, and simplicity.
+
+2. System Architecture
+2.1 Core Components
+• Smart Contracts:
+• N-Dollar Smart Contract:
+• Manages the N-Dollar token supply with scheduled increments.
+• Provides admin functions for minting, burning (if necessary), freezing funds, updating metadata, and upgrading contract logic.
+• Note: Tokens transacted via the bonding curve are recycled into the liquidity pool (N-Dollar / SOL)  rather than being burned.
+
+
+• Coin Creation Contracts:
+• Standard contracts for launching new meme coins.
+• New coins are created entirely with a fee paid in N-Dollar.
+• Bonding Smart Contract:
+• Establishes the initial liquidity for each new coin by pairing 100% of the N-Dollar fee with Solana.
+• Implements a symmetric pricing model where each incremental purchase increases the price by a fixed amount and each sale decreases it by the same amount.
+• Telegram Bot / DAO Interface:
+• Provides the primary user interface for coin holders.
+• Displays key balances for the native/meme coin, N-Dollar, and Solana.
+• Sends push notifications on price movements to encourage timely trade actions.
+• Supports trading, transfers, and coin management.
+• Subsidizes up to three transactions per week (additional transactions require a SOL deposit).
+• Referral Functionality:
+• Each coin creator receives a unique referral link for the coin’s dedicated Telegram bot.
+• When a new user signs up via that referral link, both the coin creator/or user and the new user receive 1 coin of the created coin.
+• Backend and Fund Management:
+• A centralized account collects all N-Dollar proceeds from coin creation fees, founders’ option purchases, and meme coin purchases.
+• Conversion Mechanism:
+• 100% of each N-Dollar purchase—whether received via USDT, TON, BTC (via TON Wallet), SOL, or bank transfers—is automatically converted and allocated to the N-Dollar/SOL liquidity pool.
+• These funds support three key activities:
+A) Coin creation fees
+B) Founders’ option coins
+C) Purchases of meme coins requiring N-Dollar
+• This ensures that every incoming payment directly contributes to robust liquidity.
+• Blockchain Integration:
+• The ecosystem is built exclusively on the Solana blockchain to leverage its speed and low transaction costs.
+• TON Integration for N-Dollar Purchases:
+• Users can acquire N-Dollar directly via their Telegram Wallet using TON, expanding access to the platform’s primary currency.
+2.2 Data Flows
+• Coin Creation Process:
+• Users initiate coin creation via the Genesis Bot on Telegram.
+• To create a new coin, users pay a creation fee entirely in N-Dollar.
+• The bonding smart contract allocates 100% of the fee into the liquidity pool, pairing N-Dollar with Solana.
+• Upon coin creation, the coin creator receives a unique referral link for the coin’s Telegram bot.
+• Referral Mechanism:
+• When a new user signs up to the coin’s Telegram bot via the referral link, both the coin creator/ or user,  and the new user are rewarded with 1 meme coin of that bot each .
+• Trading and Swaps:
+• Once a coin is created, it is listed in liquidity pools paired with N-Dollar.
+• Swap transactions are managed by an automated market maker (AMM) that dynamically sets prices based on current pool balances.
+• Note: Users do not need to supply both currencies for swaps—the liquidity pool already contains both N-Dollar and Solana.
+• N-Dollar Purchase & Conversion:
+• Users purchase N-Dollar using various payment methods (USDT, TON, BTC, SOL, or bank transfers).
+• All proceeds from these purchases are automatically converted into the N-Dollar/SOL liquidity pool, ensuring that funds support coin creation fees, founders’ option coins, and purchases of meme coins.
+
+3. Smart Contracts and Tokenomics
+3.1 N-Dollar Smart Contract
+• Supply Schedule:
+• Week 1: 108,000,000 coins.
+• Week 2: 54,000,000,000 coins.
+• Week 3: 108,000,000,000 coins.
+• Week 4: 369,000,000,000 coins (supply remains stable).
+• Admin Functions:
+• Ability to mint or burn tokens (if needed in exceptional cases).
+• Ability to revert transactions, freeze funds, update metadata, and upgrade contract logic.
+3.2 New Coin Creation & Distribution (via Genesis Bot)
+• Creation Fee:
+• Users pay a coin creation fee entirely in N-Dollar.
+• Proceeds Allocation: 100% of the N-Dollar fee is directed to the liquidity pool pairing N-Dollar with Solana.
+• Founders’ Option:
+• The coin creator is granted a one-time option to purchase 10% of the new coin’s total supply at a predetermined rate using N-Dollar immediately after creation.
+• Default Coin Supply & Allocation:
+• Total Supply: 100,000,000 coins.
+• 10% (10,000,000 coins): Reserved for founder allocation.
+• 10% (10,000,000 coins): Set aside for future marketing or viral distribution initiatives.
+• 50% (50,000,000 coins): Allocated to the operational agent for bounty rewards and mission execution.
+• 30% (30,000,000 coins): Offered via the bonding curve sale.
+3.3 Symmetric Bonding Curve Mechanics
+• Pricing Model:
+• Start Price: 0.00005 N-Dollar per coin.
+• Exponential Growth: The price increases exponentially based on coins purchased, calibrated so that when 30,000,000 bonding coins are sold, the price reaches 1 N-Dollar per coin.
+• Symmetry: Identical incremental changes occur for both buying (price increases) and selling (price decreases).
+• Liquidity Recycling: Sold coins are returned to the liquidity pool, preserving overall token supply.
+• Secondary Listing Trigger:
+• Once the market cap from bonding curve sales reaches a predetermined threshold (e.g., 100,000 N-Dollar), additional liquidity pools (such as on Raydium) may be created using raised funds.
+
+4. Coin Creation Process (Genesis Bot)
+4.1 User Flow
+1. Initiation of Coin Creation:
+• Users interact with the Genesis Bot on Telegram.
+• They pay the coin creation fee entirely in N-Dollar.
+2. Coin Setup:
+• Users input parameters such as the coin’s name, mission, and description.
+• The bonding smart contract uses the entire N-Dollar fee to form and bolster the liquidity pool pairing N-Dollar with Solana, thereby launching the new coin.
+• The coin creator is offered a one-time option to purchase 10% of the new coin’s total supply at a predetermined rate.
+3. Referral Mechanism for Coin Promotion:
+• Upon coin creation, the coin creator or any user receives a unique referral link for the coin’s dedicated Telegram bot.
+• When a new user signs up via this referral link, both the coin creator or existing user and the new user are rewarded with 1 coin of the created coin.
+• This incentive encourages viral promotion and community growth around the coin.
+4. Post-Creation:
+• A dedicated Telegram bot (DAO) for the new coin is activated.
+• The bot provides live updates on balances and prices, and facilitates trading.
+• Users receive push notifications on every price movement (limited to not be seen as spam), fostering active engagement.
+4.2 Removal of Traditional Airdrop & General Referral Mechanisms
+• No Airdrops:
+• New user registration does not include any token airdrops.
+• No General Referral Rewards:
+• Aside from the coin-specific referral reward (1 coin per new signup via the coin creator’s referral link, with both parties receiving 1 coin), no additional tokens are granted for referrals.
+
+5. Trading, Liquidity, and Market Making
+5.1 Default Liquidity Pools
+• Pairing Rule:
+• Every coin created is automatically paired with N-Dollar (e.g., Coin A/N-Dollar, Coin B/N-Dollar, etc.).
+• Liquidity Management:
+• All N-Dollar proceeds from coin creation fees, founders’ option purchases, and meme coin trades are consolidated into a centralized account.
+• These funds are automatically converted and allocated to maintain or expand the N-Dollar/SOL liquidity pool.
+• This pool is critical to supporting coin creation fees, founders’ option coins, and meme coin purchases that require N-Dollar.
+5.2 Swap Transactions
+• Automated Market Maker (AMM):
+• Swap transactions occur within liquidity pools governed by an AMM that dynamically sets swap ratios based on current asset balances. 
+We will not use that at the start, it should be an option. 
+
+• No Additional Dual-Currency Requirement:
+• Unlike coin creation, swap transactions do not require users to supply both currencies—the pool already contains both N-Dollar and Solana.
+• Symmetric Price Adjustments:
+• The bonding curve mechanism ensures identical incremental changes for both buying and selling, maintaining controlled price dynamics.
+5.3 Market Engagement
+• User Notifications:
+• Push notifications via the Telegram bot alert users to every price change, prompting timely trading decisions and fostering an engaged community.
+
+6. Technical Requirements and Dependencies
+• Blockchain:
+• The platform is built exclusively on the Solana blockchain to maximize speed, minimize fees, and maintain technical simplicity.
+• APIs & Integrations:
+• Integration with the Telegram Bot API for managing coin-specific DAOs.
+• TON Integration:
+• Users can purchase N-Dollar directly via their Telegram Wallet using TON.
+• Additional funding methods (USDT, BTC via TON Wallet, SOL, or future bank transfers) are automatically converted into the N-Dollar/SOL liquidity pool.
+• Backend & Fund Management:
+• A centralized account aggregates all N-Dollar proceeds.
+• All incoming funds are converted and allocated to the liquidity pool to support:
+• A) Coin creation fees
+• B) Founders’ option coins
+• C) Purchases of meme coins requiring N-Dollar
+• Security:
+• Regular audits of all smart contracts.
+• Robust measures to ensure the integrity of the bonding curve, coin creation process, and overall system operations.
+
+7. Trading & Swap Mechanism Clarifications
+• Coin Creation vs. Swaps:
+• Coin Creation:
+• Involves a fee paid entirely in N-Dollar.
+• 100% of the fee is converted into the liquidity pool pairing N-Dollar with Solana.
+• Swaps:
+• Occur within liquidity pools using an AMM mechanism.
+• Users trade between a coin and N-Dollar without needing to supply both currencies each time.
+
+8. User Interface & Notification System
+• Telegram Bot Features:
+• Real-time display of balances for the native coin, N-Dollar, and Solana. (This needs to be further discussed how we will display this)
+• Push notifications for every price change to prompt user actions.
+• Full trading functionalities, including peer-to-peer transfers. (So you can send the coins to an other TG user)
+• A dedicated section for managing coin creation (on TG this leads to the TG Genesis ot, referral links etc..
+• Engagement Focus:
+• Continuous, real-time notifications keep users informed and encourage active market participation.
+
+9. Operational Rules and Governance
+• Centralized Control (Initial Phase):
+• Admins maintain full control over key functions such as minting, fund management, and smart contract upgrades during early deployment.
+• Fund Allocation:
+• All N-Dollar proceeds are transfered to centralized account and automatically converted into the N-Dollar/SOL liquidity pool.
+• Coin creation fees, founders’ option coins, and meme coin purchases requiring N-Dollar.

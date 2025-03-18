@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::BondingCurveError;
+use crate::errors::BondingCurveError;
 
 /// Константы для бондинговой кривой
 pub mod constants {
@@ -26,6 +26,24 @@ pub mod constants {
     
     // Минимальные значения для предотвращения числовых ошибок
     pub const MIN_SAFE_SUPPLY: u64 = 10;
+}
+
+/// Вспомогательная функция для вычисления комиссии
+pub fn calculate_fee(amount: u64, fee_percent: u16) -> Result<u64> {
+    // Преобразуем fee_percent из базисных пунктов (1/100 процента) в проценты от суммы
+    // fee_percent 100 = 1% комиссии
+    let fee_u128 = (amount as u128)
+        .checked_mul(fee_percent as u128)
+        .ok_or(BondingCurveError::ArithmeticError)?
+        .checked_div(10_000) // Делим на 10000, так как fee_percent в базисных пунктах
+        .ok_or(BondingCurveError::ArithmeticError)?;
+    
+    // Проверяем переполнение при обратном преобразовании в u64
+    if fee_u128 > u64::MAX as u128 {
+        return Err(BondingCurveError::ArithmeticError.into());
+    }
+    
+    Ok(fee_u128 as u64)
 }
 
 /// Вычисляет constant product для кривой.
@@ -259,32 +277,4 @@ pub fn calculate_sell_amount(
         .ok_or(BondingCurveError::ArithmeticError)?;
     
     Ok((reserve_amount, fee_amount))
-}
-
-/// Рассчитывает комиссию от суммы
-pub fn calculate_fee(amount: u64, fee_percent: u16) -> Result<u64> {
-    // Проверка на корректность fee_percent
-    if fee_percent > 10000 { // Максимум 100%
-        return Err(BondingCurveError::InvalidParameter.into());
-    }
-    
-    // Если комиссия 0%, то просто возвращаем 0
-    if fee_percent == 0 || amount == 0 {
-        return Ok(0);
-    }
-    
-    // Безопасное умножение суммы на процент комиссии
-    let fee_u128 = (amount as u128).checked_mul(fee_percent as u128)
-        .ok_or(BondingCurveError::ArithmeticError)?;
-        
-    // Деление на 10000 (базисные пункты)
-    let fee = fee_u128.checked_div(10000)
-        .ok_or(BondingCurveError::ArithmeticError)?;
-        
-    // Проверка на переполнение
-    if fee > u64::MAX as u128 {
-        return Err(BondingCurveError::ArithmeticError.into());
-    }
-    
-    Ok(fee as u64)
 } 

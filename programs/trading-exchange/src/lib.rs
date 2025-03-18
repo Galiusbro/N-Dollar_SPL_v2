@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use anchor_lang::solana_program::pubkey::Pubkey;
+
 use bonding_curve::BondingCurve;
 // Импортируем модуль admin_control для авторизации
 use admin_control::admin_cpi;
@@ -487,7 +488,8 @@ pub struct SwapTokens<'info> {
     pub admin_control_program: Option<AccountInfo<'info>>,
     
     /// Программа бондинговой кривой
-    pub bonding_curve_program: Program<'info, bonding_curve::program::BondingCurve>,
+    /// CHECK: Используем AccountInfo вместо Program, чтобы обойти проблему с типами
+    pub bonding_curve_program: AccountInfo<'info>,
     
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

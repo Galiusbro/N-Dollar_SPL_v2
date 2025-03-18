@@ -1,11 +1,12 @@
-use crate::*;
-use anchor_lang::solana_program;
+use anchor_lang::prelude::*;
 use anchor_lang::solana_program::account_info::AccountInfo;
-use anchor_lang::solana_program::instruction::AccountMeta;
+use crate::state::AdminConfig;
+use crate::ErrorCode;
 
 /// Модуль определения типов и структур для CPI
 pub mod account {
-    use super::*;
+    use anchor_lang::prelude::*;
+    use anchor_lang::solana_program::account_info::AccountInfo;
     
     /// Определяет структуру для передачи аккаунтов инструкции initialize_admin
     #[derive(Accounts)]
@@ -151,7 +152,11 @@ pub fn derive_admin_config_address(authority: &Pubkey, program_id: &Pubkey) -> (
 
 /// Модуль для удобного вызова CPI
 pub mod direct_cpi {
-    use super::*;
+    use anchor_lang::prelude::*;
+    use anchor_lang::solana_program;
+    use anchor_lang::solana_program::account_info::AccountInfo;
+    use anchor_lang::solana_program::instruction::AccountMeta;
+    use super::account;
     
     /// Выполняет CPI вызов к инструкции initialize_admin
     pub fn initialize_admin(

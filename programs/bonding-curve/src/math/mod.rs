@@ -1,51 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::errors::BondingCurveError;
 
-/// Константы для бондинговой кривой
-pub mod constants {
-    // Степенной показатель кривой по умолчанию (2 = квадратичная кривая)
-    pub const DEFAULT_POWER: u8 = 2;
-    
-    // Комиссия по умолчанию в базисных пунктах (50 = 0.5%)
-    pub const DEFAULT_FEE_PERCENT: u16 = 50;
-    
-    // Минимальная начальная цена
-    pub const MIN_INITIAL_PRICE: u64 = 1;
-    
-    // Максимальный размер транзакции в единицах токена 
-    pub const MAX_TOKEN_TRANSACTION: u64 = 1_000_000_000;
-    
-    // Максимальный размер транзакции в N-Dollar (1000 N-Dollar, с 9 знаками после запятой)
-    pub const MAX_NDOLLAR_TRANSACTION: u64 = 1_000_000_000 * 10u64.pow(9);
-    
-    // Максимальное значение fee_percent (10% = 1000 базисных пунктов)
-    pub const MAX_FEE_PERCENT: u16 = 1000;
-    
-    // Минимальное количество токенов, которое можно купить
-    pub const MIN_TOKEN_AMOUNT: u64 = 1;
-    
-    // Минимальные значения для предотвращения числовых ошибок
-    pub const MIN_SAFE_SUPPLY: u64 = 10;
-}
-
-/// Вспомогательная функция для вычисления комиссии
-pub fn calculate_fee(amount: u64, fee_percent: u16) -> Result<u64> {
-    // Преобразуем fee_percent из базисных пунктов (1/100 процента) в проценты от суммы
-    // fee_percent 100 = 1% комиссии
-    let fee_u128 = (amount as u128)
-        .checked_mul(fee_percent as u128)
-        .ok_or(BondingCurveError::ArithmeticError)?
-        .checked_div(10_000) // Делим на 10000, так как fee_percent в базисных пунктах
-        .ok_or(BondingCurveError::ArithmeticError)?;
-    
-    // Проверяем переполнение при обратном преобразовании в u64
-    if fee_u128 > u64::MAX as u128 {
-        return Err(BondingCurveError::ArithmeticError.into());
-    }
-    
-    Ok(fee_u128 as u64)
-}
-
 /// Вычисляет constant product для кривой.
 /// Формула: constant = reserve_balance * (total_supply^power)
 pub fn calculate_constant_product(
@@ -277,4 +232,32 @@ pub fn calculate_sell_amount(
         .ok_or(BondingCurveError::ArithmeticError)?;
     
     Ok((reserve_amount, fee_amount))
-} 
+}
+
+/// Рассчитывает комиссию от суммы
+pub fn calculate_fee(amount: u64, fee_percent: u16) -> Result<u64> {
+    // Проверка на корректность fee_percent
+    if fee_percent > 10000 { // Максимум 100%
+        return Err(BondingCurveError::InvalidParameter.into());
+    }
+    
+    // Если комиссия 0%, то просто возвращаем 0
+    if fee_percent == 0 || amount == 0 {
+        return Ok(0);
+    }
+    
+    // Безопасное умножение суммы на процент комиссии
+    let fee_u128 = (amount as u128).checked_mul(fee_percent as u128)
+        .ok_or(BondingCurveError::ArithmeticError)?;
+        
+    // Деление на 10000 (базисные пункты)
+    let fee = fee_u128.checked_div(10000)
+        .ok_or(BondingCurveError::ArithmeticError)?;
+        
+    // Проверка на переполнение
+    if fee > u64::MAX as u128 {
+        return Err(BondingCurveError::ArithmeticError.into());
+    }
+    
+    Ok(fee as u64)
+}

@@ -2,36 +2,32 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum BondingCurveError {
-    #[msg("Неавторизованный доступ к программе")]
-    UnauthorizedAccess,
-    
-    #[msg("Недостаточно средств")]
+    #[msg("Недостаточно средств для покупки")]
     InsufficientFunds,
-    
-    #[msg("Недостаточно ликвидности")]
-    InsufficientLiquidity,
-    
-    #[msg("Недостаточно токенов")]
+    #[msg("Недостаточно токенов для продажи")]
     InsufficientTokens,
-    
-    #[msg("Нулевое количество")]
-    ZeroAmount,
-    
-    #[msg("Нулевой результат операции")]
-    ZeroOutput,
-    
-    #[msg("Сумма слишком мала")]
-    AmountTooSmall,
-    
-    #[msg("Транзакция слишком большая")]
-    TransactionTooLarge,
-    
-    #[msg("Деление на ноль")]
-    ZeroDivision,
-    
-    #[msg("Арифметическая ошибка")]
+    #[msg("Недостаточно ликвидности в пуле")]
+    InsufficientLiquidity,
+    #[msg("Арифметическая ошибка при расчете")]
     ArithmeticError,
-    
-    #[msg("Неверный параметр")]
+    #[msg("Деление на ноль при расчетах")]
+    ZeroDivision,
+    #[msg("Количество токенов должно быть больше нуля")]
+    ZeroAmount,
+    #[msg("Рассчитано нулевое количество токенов")]
+    ZeroOutput,
+    #[msg("Превышен максимальный размер транзакции")]
+    TransactionTooLarge,
+    #[msg("Некорректный параметр")]
     InvalidParameter,
-} 
+    #[msg("Ошибка при выполнении транзакции токена")]
+    TokenTransferError,
+    #[msg("Слишком маленькое количество токенов для операции")]
+    AmountTooSmall,
+    #[msg("Слишком большое количество токенов для операции")]
+    AmountTooLarge,
+    #[msg("Отсутствует необходимый аккаунт")]
+    MissingAccount,
+    #[msg("Неавторизованный доступ")]
+    UnauthorizedAccess,
+}

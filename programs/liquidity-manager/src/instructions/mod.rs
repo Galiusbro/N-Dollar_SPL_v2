@@ -1,9 +1,9 @@
 pub mod initialize;
-pub mod trade;
-pub mod price;
+pub mod swap;
+pub mod liquidity;
 pub mod utils;
 
 pub use initialize::*;
-pub use trade::*;
-pub use price::*;
+pub use swap::*;
+pub use liquidity::*;
 pub use utils::*;

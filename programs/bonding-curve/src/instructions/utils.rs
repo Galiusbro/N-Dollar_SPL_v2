@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
-use admin_control::admin_cpi::verify_program_authorization;
 use crate::errors::BondingCurveError;
-// get_fee_basis_points
+use admin_control::admin_cpi::verify_program_authorization;
+//get_fee_basis_points
+
 /// Вспомогательная функция для проверки авторизации программы через admin_control
 pub fn verify_program_auth<'info>(
     admin_config: &AccountInfo<'info>,
@@ -16,4 +17,4 @@ pub fn verify_program_auth<'info>(
     
     require!(is_authorized, BondingCurveError::UnauthorizedAccess);
     Ok(())
-} 
+}

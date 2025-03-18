@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use anchor_lang::solana_program::pubkey::Pubkey;
 
-use bonding_curve::BondingCurve;
+use bonding_curve::state::BondingCurve;
 // Импортируем модуль admin_control для авторизации
 use admin_control::admin_cpi;
 

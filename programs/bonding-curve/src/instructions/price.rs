@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
 use crate::contexts::CalculatePrice;
-use crate::errors::BondingCurveError;
 use crate::math;
 
 /// Рассчитывает текущую цену токена и отправляет результат в логи

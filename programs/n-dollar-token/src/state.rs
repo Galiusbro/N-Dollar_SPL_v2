@@ -13,8 +13,10 @@ pub struct AdminAccount {
     pub last_block_time: i64,  // Последний блок, когда был выполнен минт
     pub last_block_height: u64, // Высота последнего блока
     pub min_required_signers: u8, // Минимальное количество подписантов для чувствительных операций
+    // Поле для отслеживания текущей недели минтинга
+    pub current_mint_week: u8, // Текущая неделя минтинга (1-4)
 }
 
 impl AdminAccount {
-    pub const SPACE: usize = 32 + 32 + 8 + 8 + 1 + ((32 + 1) * 3) + 8 + 8 + 1;
+    pub const SPACE: usize = 32 + 32 + 8 + 8 + 1 + ((32 + 1) * 3) + 8 + 8 + 1 + 1;
 }

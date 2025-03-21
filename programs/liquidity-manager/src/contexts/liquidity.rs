@@ -39,3 +39,22 @@ pub struct ManageLiquidity<'info> {
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
+
+/// Контекст для обновления состояния ликвидности после минта токенов
+#[derive(Accounts)]
+pub struct UpdateAfterMint<'info> {
+    #[account(
+        mut,
+        constraint = liquidity_manager.n_dollar_mint == mint.key()
+    )]
+    pub liquidity_manager: Account<'info, LiquidityManager>,
+    
+    #[account(
+        mut,
+        constraint = pool_ndollar_account.mint == mint.key(),
+    )]
+    pub pool_ndollar_account: Account<'info, TokenAccount>,
+    
+    /// CHECK: Проверка, что это правильный минт
+    pub mint: AccountInfo<'info>,
+}

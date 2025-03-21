@@ -29,6 +29,11 @@ pub mod n_dollar_token {
     pub fn mint_supply(ctx: Context<MintSupply>, amount: u64) -> Result<()> {
         instructions::mint::mint_supply(ctx, amount)
     }
+    
+    /// Минтинг токенов с автоматическим распределением в пул ликвидности
+    pub fn mint_to_liquidity(ctx: Context<MintToLiquidity>, amount: u64) -> Result<()> {
+        instructions::mint::mint_to_liquidity(ctx, amount)
+    }
 
     /// Сжигание токенов (административная функция)
     pub fn burn_tokens(ctx: Context<AdminFunction>, amount: u64) -> Result<()> {
@@ -46,14 +51,14 @@ pub mod n_dollar_token {
     }
 
     /// Обновление метаданных токена (административная функция)
-    pub fn update_metadata(
+    /*pub fn update_metadata(
         ctx: Context<UpdateMetadata>,
         name: String,
         symbol: String,
         uri: String,
     ) -> Result<()> {
         instructions::metadata::update_metadata(ctx, name, symbol, uri)
-    }
+    }*/
 
     /// Добавление авторизованного подписанта
     pub fn add_authorized_signer(ctx: Context<AdminFunction>, new_signer: Pubkey) -> Result<()> {

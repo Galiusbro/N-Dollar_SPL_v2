@@ -9,10 +9,10 @@ use mpl_token_metadata::{
     ID as METADATA_PROGRAM_ID,
 };
 
-declare_id!("Cf8bAqCzB76XVY7Dmj1M6JTuQP7Z7ziSmVnsNy7Sb7Nh");
+declare_id!("E3ZAgCnCpX38ktRUFgpjsMp3xJT8qzuXerWy88zY7wfL");
 
 #[program]
-pub mod spl_token_program {
+pub mod awesome {
     use super::*;
 
     pub fn create_token(

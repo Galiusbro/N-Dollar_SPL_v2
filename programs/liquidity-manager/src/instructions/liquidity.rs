@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke, program::invoke_signed, system_instruction};
 use anchor_spl::token::{self, Transfer};
-use crate::contexts::ManageLiquidity;
+use crate::contexts::{ManageLiquidity, UpdateAfterMint};
 use crate::errors::LiquidityError;
 
 /// Добавление ликвидности в пул (только для владельца)
@@ -156,5 +156,28 @@ pub fn remove_liquidity(
     msg!("Ликвидность успешно изъята: {} SOL и {} N-Dollar", 
         sol_amount as f64 / anchor_lang::solana_program::native_token::LAMPORTS_PER_SOL as f64,
         ndollar_amount);
+    Ok(())
+}
+
+/// Обновление состояния после прямого минта токенов в пул ликвидности
+pub fn update_after_mint(
+    ctx: Context<UpdateAfterMint>,
+    ndollar_amount: u64,
+) -> Result<()> {
+    let liquidity_manager = &mut ctx.accounts.liquidity_manager;
+    
+    // Проверяем, что сумма для обновления ненулевая
+    require!(ndollar_amount > 0, LiquidityError::InvalidAmount);
+    
+    // Проверяем, что сумма в токен-аккаунте пула соответствует ожидаемой
+    let expected_balance = liquidity_manager.total_liquidity + ndollar_amount;
+    
+    msg!("Обновление состояния ликвидности после минта: {} N-Dollar", ndollar_amount);
+    
+    // Обновляем статистику в менеджере ликвидности
+    liquidity_manager.last_update_time = Clock::get()?.unix_timestamp;
+    liquidity_manager.total_liquidity = expected_balance;
+    
+    msg!("Состояние ликвидности успешно обновлено");
     Ok(())
 }

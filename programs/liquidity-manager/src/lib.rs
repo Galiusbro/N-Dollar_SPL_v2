@@ -7,6 +7,8 @@ pub mod errors;
 pub mod state;
 pub mod contexts;
 pub mod instructions;
+// #[cfg(feature = "cpi")]
+pub mod liquidity_cpi;
 
 use contexts::*;
 
@@ -71,5 +73,13 @@ pub mod liquidity_manager {
         min_sol_amount: u64,
     ) -> Result<()> {
         instructions::swap::swap_ndollar_to_sol_with_slippage(ctx, ndollar_amount, min_sol_amount)
+    }
+    
+    /// Обновление состояния ликвидности после прямого минта
+    pub fn update_after_mint(
+        ctx: Context<UpdateAfterMint>,
+        ndollar_amount: u64,
+    ) -> Result<()> {
+        instructions::liquidity::update_after_mint(ctx, ndollar_amount)
     }
 }

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::Mint;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::state::*;
 
 #[derive(Accounts)]
@@ -18,6 +18,9 @@ pub struct InitializeLiquidityManager<'info> {
     )]
     pub liquidity_manager: Account<'info, LiquidityManager>,
     
+    pub pool_ndollar_account: Account<'info, TokenAccount>,
+    
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     pub rent: Sysvar<'info, Rent>,
 }

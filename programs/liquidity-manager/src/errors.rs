@@ -22,4 +22,12 @@ pub enum LiquidityError {
     TooFrequentLargeTransactions,
     #[msg("Превышен лимит проскальзывания цены")]
     SlippageExceeded,
+    #[msg("Недостаточно средств в пуле ликвидности")]
+    InsufficientLiquidityInPool,
+    #[msg("Слишком большой объем торговли, превышающий лимиты ликвидности")]
+    TradeTooLarge,
+    #[msg("Сейчас нельзя выполнить операцию из-за кулдауна")]
+    OperationOnCooldown,
+    #[msg("Неправильная транзакция для данного рынка")]
+    InvalidTransaction,
 }

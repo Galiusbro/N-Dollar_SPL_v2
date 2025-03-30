@@ -1,12 +1,12 @@
 [package]
-name = "bonding-curve"
+name = "liquidity-pool"
 version = "0.1.0"
 description = "Created with Anchor"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "bonding_curve"
+name = "liquidity_pool"
 
 [features]
 default = []
@@ -19,5 +19,5 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
 anchor-lang = { version = "0.31.0", features = ["init-if-needed"] }
-anchor-spl = { version = "0.31.0" }
-liquidity-pool = { path = "../liquidity-pool", features = ["cpi"] }
+anchor-spl = { version = "0.31.0", features = ["metadata"] }
+

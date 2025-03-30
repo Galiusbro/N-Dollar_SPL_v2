@@ -3,14 +3,6 @@
 version = 4
 
 [[package]]
-name = "admin_control"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
-]
-
-[[package]]
 name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -287,15 +279,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
-name = "awesome"
-version = "0.1.0"
-dependencies = [
- "anchor-lang",
- "anchor-spl",
- "mpl-token-metadata",
-]
-
-[[package]]
 name = "base64"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -364,9 +347,9 @@ dependencies = [
 name = "bonding-curve"
 version = "0.1.0"
 dependencies = [
- "admin_control",
  "anchor-lang",
  "anchor-spl",
+ "liquidity-pool",
 ]
 
 [[package]]
@@ -707,7 +690,10 @@ dependencies = [
  "anchor-lang",
  "anchor-spl",
  "bonding-curve",
- "referral-system",
+ "liquidity-pool",
+ "mpl-token-metadata",
+ "n-dollar",
+ "token-distributor",
 ]
 
 [[package]]
@@ -879,7 +865,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "liquidity-manager"
+name = "liquidity-pool"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
@@ -943,13 +929,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "n-dollar-token"
+name = "n-dollar"
 version = "0.1.0"
 dependencies = [
- "admin_control",
  "anchor-lang",
  "anchor-spl",
- "liquidity-manager",
+ "liquidity-pool",
+ "mpl-token-metadata",
 ]
 
 [[package]]
@@ -1220,12 +1206,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "referral-system"
+name = "referral-rewards"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
- "mpl-token-metadata",
 ]
 
 [[package]]
@@ -2692,6 +2677,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "token-distributor"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "anchor-spl",
+ "bonding-curve",
+]
+
+[[package]]
 name = "toml"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2732,17 +2726,6 @@ dependencies = [
  "serde_spanned",
  "toml_datetime",
  "winnow",
-]
-
-[[package]]
-name = "trading-exchange"
-version = "0.1.0"
-dependencies = [
- "admin_control",
- "anchor-lang",
- "anchor-spl",
- "bonding-curve",
- "liquidity-manager",
 ]
 
 [[package]]

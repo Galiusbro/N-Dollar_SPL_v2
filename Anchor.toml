@@ -6,14 +6,12 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-admin_control = "EH6KMczMwjBNHUougk6oUU2PTF7aUxzJF1hbwyEdRnJd"
-bonding-curve = "HgiiaxwngpLK7jS3hC5EYXz8JkgSpMcA1xdaRc7tCqTL"
-genesis = "9FtGUvKzUZ9MFKYWnj4hsNLomFVopjGtznp52pMEWY8D"
-liquidity-manager = "4uP4rbMsgqMf9GKSAbbiDKKLJ1a2Rp4SEYE5jdhiVYLU"
-n-dollar-token = "2MiMzfH55kTC9tNM8LQFLzC8GbduTMTe5SyTadBi33cL"
-referral-system = "Cf8bAqCzB76XVY7Dmj1M6JTuQP7Z7ziSmVnsNy7Sb7Nh"
-awesome = "E3ZAgCnCpX38ktRUFgpjsMp3xJT8qzuXerWy88zY7wfL"
-trading-exchange = "7i7EpxhmCxmDhBvcTNFVXqq2SRQNt7HG98ANxRdcF6Dh"
+bonding-curve = "GvFsepxBQ2q8xZ3PYYDooMdnMBzWQKkpKavzT7vM83rZ"
+genesis = "2vgQn1c2JPWGHYcjhBcdeXKCQCSWfs8gYn6CcNhMKwMG"
+liquidity-pool = "B24yupzEDjF7Z9frnDG16uAwH1ZYfB57kuzh8jwDsL83"
+n-dollar = "3Mdve11qmHuVZVe9YgCzA1d3hcjyamm2Jiz3VfHSJgEQ"
+referral-rewards = "8YxBBLHPCAMQWkxD8WD1X1XyuUZH5u58wB8R4Q31eGCb"
+token-distributor = "2Hy1wGdC5iqceaTnZC1qJeuoM4s6yEKHbYcjMMpbKYqp"
 
 [registry]
 url = "https://api.apr.dev"
@@ -27,9 +25,14 @@ test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 
 [test]
 startup_wait = 10000
+shutdown_wait = 2000
+upgradeable = false
 
 [test.validator]
+bind_address = "0.0.0.0"
 url = "https://api.devnet.solana.com"
+ledger = ".anchor/test-ledger"
+rpc_port = 8899
 
 [[test.validator.clone]]
 address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"

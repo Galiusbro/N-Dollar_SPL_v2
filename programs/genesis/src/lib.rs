@@ -10,11 +10,6 @@ types::{DataV2, Creator},
 ID as METADATA_PROGRAM_ID,
 };
 
-// Import the new programs (adjust path if using crates)
-// use crate::{bonding_curve, token_distributor};
-// use bonding_curve;
-// use token_distributor;
-
 // Use the original declare_id
 declare_id!("2vgQn1c2JPWGHYcjhBcdeXKCQCSWfs8gYn6CcNhMKwMG");
 
@@ -42,6 +37,8 @@ pub struct TokenCreated {
 pub mint: Pubkey,
 pub authority: Pubkey,
 pub total_supply: u64,
+pub distributor_authority: Pubkey,
+pub distributor_token_account: Pubkey,
 pub n_dollar_spent: u64,
 pub sol_used: u64,
 pub timestamp: i64,
@@ -124,14 +121,23 @@ use anchor_lang::solana_program::program::invoke;
             msg!("Swap complete");
         }
 
+        // // --- Check SOL Balance for Rent ---
+        // let user_sol_balance = ctx.accounts.authority.lamports();
+        // msg!("User SOL balance after swap: {}", user_sol_balance);
+        // require!(
+        //     user_sol_balance >= TOTAL_RENT_COST_ESTIMATE,
+        //     ErrorCode::InsufficientSolBalance
+        // );
+
+        // msg!("SOL balance check passed");
+
         // --- Check SOL Balance for Rent ---
-        let user_sol_balance = ctx.accounts.authority.lamports();
-        msg!("User SOL balance after swap: {}", user_sol_balance);
+        let user_sol_balance_after_swap = ctx.accounts.authority.lamports(); // Баланс ПОСЛЕ свапа
+        msg!("User SOL balance after swap: {}", user_sol_balance_after_swap);
         require!(
-            user_sol_balance >= TOTAL_RENT_COST_ESTIMATE,
+            user_sol_balance_after_swap >= TOTAL_RENT_COST_ESTIMATE,
             ErrorCode::InsufficientSolBalance
         );
-
         msg!("SOL balance check passed");
 
         // --- Create Metadata ---
@@ -200,31 +206,44 @@ use anchor_lang::solana_program::program::invoke;
         token::mint_to(cpi_ctx_mint, total_supply)?;
         msg!("Minting complete");
 
-        // --- Call Token Distributor ---
-        msg!("Calling token distributor program...");
-        let cpi_program_distribute = ctx.accounts.token_distributor_program.to_account_info();
-        let cpi_accounts_distribute = token_distributor::cpi::accounts::DistributeTokens {
-            mint: ctx.accounts.mint.to_account_info(),
-            distributor_authority: ctx.accounts.distributor_authority.to_account_info(),
-            distributor_token_account: ctx.accounts.distributor_token_account.to_account_info(),
-            user_authority: ctx.accounts.authority.to_account_info(),
-            user_token_account: ctx.accounts.user_token_account.to_account_info(),
-            bonding_curve_authority: ctx.accounts.bonding_curve_authority.to_account_info(),
-            bonding_curve_token_account: ctx.accounts.bonding_curve_token_account.to_account_info(),
-            token_program: ctx.accounts.token_program.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-            associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
-        };
-        let cpi_ctx_distribute = CpiContext::new(cpi_program_distribute, cpi_accounts_distribute);
-        token_distributor::cpi::distribute_tokens(cpi_ctx_distribute, total_supply)?;
-        msg!("Token distributor program called successfully");
+        // // --- Call Token Distributor ---
+        // msg!("Calling token distributor program...");
+        // let cpi_program_distribute = ctx.accounts.token_distributor_program.to_account_info();
+        // let cpi_accounts_distribute = token_distributor::cpi::accounts::DistributeTokens {
+        //     mint: ctx.accounts.mint.to_account_info(),
+        //     distributor_authority: ctx.accounts.distributor_authority.to_account_info(),
+        //     distributor_token_account: ctx.accounts.distributor_token_account.to_account_info(),
+        //     user_authority: ctx.accounts.authority.to_account_info(),
+        //     user_token_account: ctx.accounts.user_token_account.to_account_info(),
+        //     bonding_curve_authority: ctx.accounts.bonding_curve_authority.to_account_info(),
+        //     bonding_curve_token_account: ctx.accounts.bonding_curve_token_account.to_account_info(),
+        //     token_program: ctx.accounts.token_program.to_account_info(),
+        //     system_program: ctx.accounts.system_program.to_account_info(),
+        //     associated_token_program: ctx.accounts.associated_token_program.to_account_info(),
+        // };
+        // let cpi_ctx_distribute = CpiContext::new(cpi_program_distribute, cpi_accounts_distribute);
+        // token_distributor::cpi::distribute_tokens(cpi_ctx_distribute, total_supply)?;
+        // msg!("Token distributor program called successfully");
+
+        // --- Handle Rent and SOL Refund ---
+        // let final_sol_balance = ctx.accounts.authority.lamports();
+        // let sol_used_for_rent = user_sol_balance.saturating_sub(final_sol_balance);
+        
+        // // Оставляем достаточно SOL для аренды всех аккаунтов
+        // let min_balance_to_keep = TOTAL_RENT_COST_ESTIMATE + 5000; // Аренда + небольшой запас на комиссию
 
         // --- Handle Rent and SOL Refund ---
         let final_sol_balance = ctx.accounts.authority.lamports();
-        let sol_used_for_rent = user_sol_balance.saturating_sub(final_sol_balance);
-        
-        // Оставляем достаточно SOL для аренды всех аккаунтов
-        let min_balance_to_keep = TOTAL_RENT_COST_ESTIMATE + 5000; // Аренда + небольшой запас на комиссию
+        let sol_used_for_rent = user_sol_balance_after_swap.saturating_sub(final_sol_balance);
+
+        // Пересчитываем минимальный баланс для сохранения, исходя из *фактически* созданных аккаунтов
+        // Mint + Metadata + TokenInfo + (если создали) Distributor ATA
+        let rent_for_created_accounts = ctx.accounts.mint.get_lamports()
+            + ctx.accounts.metadata.get_lamports()
+            + ctx.accounts.token_info.get_lamports()
+            + ctx.accounts.distributor_token_account.get_lamports();
+
+        let min_balance_to_keep = rent_for_created_accounts + 5000; // Рента + небольшой запас
 
         if final_sol_balance > min_balance_to_keep {
             let refund_amount = final_sol_balance - min_balance_to_keep;
@@ -251,6 +270,8 @@ use anchor_lang::solana_program::program::invoke;
             mint: ctx.accounts.mint.key(),
             authority: ctx.accounts.authority.key(),
             total_supply,
+            distributor_authority: ctx.accounts.distributor_authority.key(),
+            distributor_token_account: ctx.accounts.distributor_token_account.key(),
             n_dollar_spent: n_dollar_amount,
             sol_used: sol_used_for_rent,
             timestamp: Clock::get()?.unix_timestamp,
@@ -322,7 +343,7 @@ pub struct CreateUserToken<'info> {
     mint::decimals = DECIMALS,
     mint::authority = authority.key(),
     mint::freeze_authority = authority.key(),
-    rent_exempt = enforce
+    // rent_exempt = enforce
 )]
 pub mint: Account<'info, Mint>,
 
@@ -397,29 +418,29 @@ pub mint: Account<'info, Mint>,
     )]
     pub distributor_token_account: Account<'info, TokenAccount>,
 
-    #[account(
-        init_if_needed, // Initialize user's ATA for the *new* token
-        payer = authority,
-        associated_token::mint = mint,
-        associated_token::authority = authority, // User is the authority
-    )]
-    pub user_token_account: Account<'info, TokenAccount>, // User's ATA for the *newly created* token
+    // #[account(
+    //     init_if_needed, // Initialize user's ATA for the *new* token
+    //     payer = authority,
+    //     associated_token::mint = mint,
+    //     associated_token::authority = authority, // User is the authority
+    // )]
+    // pub user_token_account: Account<'info, TokenAccount>, // User's ATA for the *newly created* token
 
-    /// CHECK: PDA for the bonding curve program, acts as authority for its ATA.
-     #[account(
-        seeds = [b"bonding_curve".as_ref(), mint.key().as_ref()],
-        bump,
-        seeds::program = bonding_curve::ID
-    )]
-    pub bonding_curve_authority: AccountInfo<'info>,
+    // /// CHECK: PDA for the bonding curve program, acts as authority for its ATA.
+    //  #[account(
+    //     seeds = [b"bonding_curve".as_ref(), mint.key().as_ref()],
+    //     bump,
+    //     seeds::program = bonding_curve::ID
+    // )]
+    // pub bonding_curve_authority: AccountInfo<'info>,
 
-    #[account(
-        init_if_needed, // Initialize bonding curve's ATA if it doesn't exist
-        payer = authority,
-        associated_token::mint = mint,
-        associated_token::authority = bonding_curve_authority, // Bonding curve PDA is the authority
-    )]
-    pub bonding_curve_token_account: Account<'info, TokenAccount>,
+    // #[account(
+    //     init_if_needed, // Initialize bonding curve's ATA if it doesn't exist
+    //     payer = authority,
+    //     associated_token::mint = mint,
+    //     associated_token::authority = bonding_curve_authority, // Bonding curve PDA is the authority
+    // )]
+    // pub bonding_curve_token_account: Account<'info, TokenAccount>,
 
     // ---- Programs ----
     pub token_program: Program<'info, Token>,
@@ -434,10 +455,10 @@ pub mint: Account<'info, Mint>,
     // Program for the liquidity pool CPI
     pub liquidity_pool_program: Program<'info, liquidity_pool::program::LiquidityPool>, // Use actual Program type
     // Программа для CPI распределителя токенов
-    pub token_distributor_program: Program<'info, token_distributor::program::TokenDistributor>, // Используйте фактический тип программы
+    // pub token_distributor_program: Program<'info, token_distributor::program::TokenDistributor>, // Используйте фактический тип программы
 
     // Программа для кривой связывания (необходима для производной PDA) - не вызывается через CPI здесь
-    pub bonding_curve_program: Program<'info, bonding_curve::program::BondingCurve>, // Используйте фактический тип программы
+    // pub bonding_curve_program: Program<'info, bonding_curve::program::BondingCurve>, // Используйте фактический тип программы
 }
 
 #[account]

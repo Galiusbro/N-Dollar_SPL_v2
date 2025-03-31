@@ -1206,7 +1206,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "referral-rewards"
+name = "referral-program"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",

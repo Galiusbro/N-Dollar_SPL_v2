@@ -49,11 +49,19 @@
 
 //   // --- ИЗМЕНЕНО: Загрузка всех необходимых программ ---
 //   const tokenCreatorProgram = anchor.workspace.TokenCreator as Program;
-//   const tokenDistributorProgram = anchor.workspace.TokenDistributor as Program; // Добавлено
-//   const bondingCurveProgram = anchor.workspace.BondingCurve as Program; // Добавлено (даже если пустой, нужен ID)
+//   const tokenDistributorProgram = anchor.workspace.TokenDistributor as Program;
+//   const bondingCurveProgram = anchor.workspace.BondingCurve as Program;
 //   const liquidityPoolProgram = anchor.workspace.LiquidityPool as Program;
-//   // Оставляем NdollarProgram, если он все еще отвечает за создание N-Dollar и инициализацию пула
-//   const NdollarProgram = anchor.workspace.NDollar as Program; // Убедитесь, что он еще есть и нужен
+//   const NdollarProgram = anchor.workspace.NDollar as Program;
+
+//   // Глобальные переменные для тестов
+//   let userTokenMint: PublicKey;
+//   let userTokenMintKp: Keypair;
+//   let bondingCurvePda: PublicKey;
+//   let nDollarTreasury: PublicKey;
+//   let bondingCurveAuthorityPda: PublicKey;
+//   let bondingCurveTokenAccount: PublicKey;
+//   let userTokenAccount: PublicKey;
 
 //   const METADATA_PROGRAM_ID = new PublicKey(
 //     "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
@@ -123,17 +131,8 @@
 //   }
 
 //   // --- Добавляем переменные для User Token ---
-//   let userTokenMintKp: Keypair;
-//   let userTokenMint: PublicKey;
-//   let userTokenMetadataPda: PublicKey;
-//   let tokenInfoPda: PublicKey;
 //   let distributorAuthorityPda: PublicKey;
-//   let bondingCurveAuthorityPda: PublicKey;
-//   let userTokenAccount: PublicKey; // ATA пользователя для User Token
-//   let distributorTokenAccount: PublicKey; // ATA дистрибьютора для User Token
-//   let bondingCurveTokenAccount: PublicKey; // ATA кривой для User Token
-//   let bondingCurvePda: PublicKey; // PDA состояния кривой
-//   let nDollarTreasury: PublicKey; // ATA казны кривой для N-Dollar
+//   let tokenInfoPda: PublicKey;
 //   const tokenDecimals = 9; // Децималы мем-коина
 //   const nDollarDecimals = 9; // Децималы N-Dollar (убедись, что они совпадают с созданием N-Dollar)
 //   // // Initialize PDAs and accounts before tests
@@ -389,8 +388,8 @@
 //   it("6. Creates user token using N-Dollars and distributes", async () => {
 //     await sleep(1000);
 
-//     const userTokenMintKp = Keypair.generate();
-//     const userTokenMint = userTokenMintKp.publicKey;
+//     userTokenMintKp = Keypair.generate();
+//     userTokenMint = userTokenMintKp.publicKey;
 //     console.log("\nCreating user token...");
 //     console.log("User token mint pubkey:", userTokenMint.toString());
 
@@ -409,7 +408,7 @@
 //     // Если баланс недостаточен, пытаемся получить больше N-Dollar
 //     if (userNDollarBalanceBefore < nDollarAmountForRent.toNumber()) {
 //       console.log("Insufficient N-Dollar balance, attempting to get more...");
-//       const solToSwap = new BN(2 * SOL_DECIMALS); // Увеличиваем количество SOL для свапа
+//       const solToSwap = new BN(2 * SOL_DECIMALS);
 
 //       const swapTx = await liquidityPoolProgram.methods
 //         .swapSolToNdollar(solToSwap)
@@ -428,7 +427,6 @@
 //       console.log("Additional swap tx:", swapTx);
 //       await provider.connection.confirmTransaction(swapTx, "confirmed");
 
-//       // Проверяем новый баланс
 //       const newBalance = await getTokenBalance(provider, userNDollarAccount);
 //       console.log(`New N-Dollar balance after swap: ${newBalance.toString()}`);
 
@@ -444,9 +442,7 @@
 //       `Insufficient N-Dollar balance. Need ${nDollarAmountForRent.toString()}, have ${userNDollarBalanceBefore.toString()}`
 //     );
 
-//     // --- ИЗМЕНЕНО: Находим ВСЕ необходимые PDA и ATA для НОВОГО токена ---
-
-//     // PDA для метаданных (как раньше)
+//     // Находим все необходимые PDA и ATA
 //     const [userTokenMetadataPda] = PublicKey.findProgramAddressSync(
 //       [
 //         Buffer.from("metadata"),
@@ -456,26 +452,36 @@
 //       METADATA_PROGRAM_ID
 //     );
 
-//     // PDA для информации о токене (как раньше, но с ID новой программы tokenCreator)
 //     const [tokenInfoPda] = PublicKey.findProgramAddressSync(
 //       [Buffer.from("token_info"), userTokenMint.toBuffer()],
-//       tokenCreatorProgram.programId // Используем ID программы token_creator
+//       tokenCreatorProgram.programId
 //     );
 
-//     // PDA для дистрибьютора
-//     const [distributorAuthorityPda] = PublicKey.findProgramAddressSync(
+//     [distributorAuthorityPda] = PublicKey.findProgramAddressSync(
 //       [Buffer.from("distributor"), userTokenMint.toBuffer()],
-//       tokenDistributorProgram.programId // ID программы token_distributor
+//       tokenDistributorProgram.programId
 //     );
 
-//     // PDA для бондинг кривой
-//     const [bondingCurveAuthorityPda] = PublicKey.findProgramAddressSync(
+//     // Добавляем PDA для операционного агента
+
+//     [bondingCurveAuthorityPda] = PublicKey.findProgramAddressSync(
 //       [Buffer.from("bonding_curve"), userTokenMint.toBuffer()],
-//       bondingCurveProgram.programId // ID программы bonding_curve
+//       bondingCurveProgram.programId
 //     );
 
-//     // ATA для нового токена
-//     const userTokenAccount = getAssociatedTokenAddressSync(
+//     // Исправляем сиды для PDA бондинг кривой в соответствии с lib.rs
+//     [bondingCurvePda] = PublicKey.findProgramAddressSync(
+//       [Buffer.from("bonding_curve"), userTokenMint.toBuffer()],
+//       bondingCurveProgram.programId
+//     );
+
+//     // PDA для казны N-Dollar
+//     [nDollarTreasury] = PublicKey.findProgramAddressSync(
+//       [Buffer.from("n_dollar_treasury"), userTokenMint.toBuffer()],
+//       bondingCurveProgram.programId
+//     );
+
+//     userTokenAccount = getAssociatedTokenAddressSync(
 //       userTokenMint,
 //       wallet.publicKey
 //     );
@@ -484,7 +490,7 @@
 //       distributorAuthorityPda,
 //       true
 //     );
-//     const bondingCurveTokenAccount = getAssociatedTokenAddressSync(
+//     bondingCurveTokenAccount = getAssociatedTokenAddressSync(
 //       userTokenMint,
 //       bondingCurveAuthorityPda,
 //       true
@@ -501,6 +507,8 @@
 //       "Bonding Curve Authority PDA:",
 //       bondingCurveAuthorityPda.toBase58()
 //     );
+//     console.log("Bonding Curve PDA:", bondingCurvePda.toBase58());
+//     console.log("N-Dollar Treasury:", nDollarTreasury.toBase58());
 //     console.log("User Token ATA:", userTokenAccount.toBase58());
 //     console.log("Distributor Token ATA:", distributorTokenAccount.toBase58());
 //     console.log(
@@ -512,7 +520,7 @@
 //     const name = "My Distributed Token";
 //     const symbol = "DIST";
 //     const uri = "https://example.com/dist-token.json";
-//     const totalSupply = new BN(1_000_000_000).mul(new BN(10 ** 9)); // 1 миллиард токенов с 9 децималами
+//     const totalSupply = new BN(100_000_000).mul(new BN(10 ** 9)); // 1 миллиард токенов с 9 децималами
 //     // ВАЖНО: Сумма N-Dollar должна быть достаточной для аренды ВСЕХ аккаунтов
 //     // mint, metadata, token_info, user ATA, distributor ATA, bonding curve ATA
 //     // Используем большее значение для надежности теста, например, 0.05 N-Dollar (если децималы 9)
@@ -525,34 +533,34 @@
 //           mint: userTokenMint,
 //           metadata: userTokenMetadataPda,
 //           tokenInfo: tokenInfoPda,
-//           authority: wallet.publicKey, // Payer и user authority
+//           authority: wallet.publicKey,
 
-//           // Аккаунты пула ликвидности (для свопа N-Dollar -> SOL)
+//           // Аккаунты пула ликвидности
 //           liquidityPool: poolPda,
-//           poolNDollarAccount: poolNDollarAccount, // Vault пула для N-Dollar
-//           poolSolAccount: solVaultPda, // Vault пула для SOL
-//           userNDollarAccount: userNDollarAccount, // ATA пользователя для N-Dollar
-//           nDollarMint: nDollarMint, // Mint N-Dollar
-//           solMint: WRAPPED_SOL_MINT, // Используется как 'placeholder' в Rust, но должен быть реальный mint (хоть и не используется напрямую в логике без WSOL)
+//           poolNDollarAccount: poolNDollarAccount,
+//           poolSolAccount: solVaultPda,
+//           userNDollarAccount: userNDollarAccount,
+//           nDollarMint: nDollarMint,
+//           solMint: WRAPPED_SOL_MINT,
 
-//           // --- ИЗМЕНЕНО: Добавлены аккаунты для дистрибуции ---
+//           // Аккаунты дистрибуции
 //           distributorAuthority: distributorAuthorityPda,
 //           distributorTokenAccount: distributorTokenAccount,
-//           userTokenAccount: userTokenAccount, // ATA пользователя для *нового* токена
+//           userTokenAccount: userTokenAccount,
 //           bondingCurveAuthority: bondingCurveAuthorityPda,
 //           bondingCurveTokenAccount: bondingCurveTokenAccount,
 
-//           // Системные программы и Rent
+//           // Системные программы
 //           tokenProgram: TOKEN_PROGRAM_ID,
 //           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
 //           systemProgram: SystemProgram.programId,
 //           rent: SYSVAR_RENT_PUBKEY,
 //           tokenMetadataProgram: METADATA_PROGRAM_ID,
 
-//           // --- ИЗМЕНЕНО: Добавлены ID программ для CPI и проверки PDA ---
+//           // ID программ
 //           liquidityPoolProgram: liquidityPoolProgram.programId,
 //           tokenDistributorProgram: tokenDistributorProgram.programId,
-//           bondingCurveProgram: bondingCurveProgram.programId, // Нужен для проверки сидов bondingCurveAuthority
+//           bondingCurveProgram: bondingCurveProgram.programId,
 //         })
 //         .preInstructions([
 //           anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
@@ -661,6 +669,12 @@
 //   // --- Шаг 7: Инициализация Бондинг Кривой ---
 //   it("7. Initializes the bonding curve", async () => {
 //     await sleep(1000);
+//     const userBalance = await provider.connection.getBalance(wallet.publicKey);
+//     if (userBalance < 20 * SOL_DECIMALS) {
+//       // Увеличил запас SOL на всякий случай
+//       await airdropSol(wallet.publicKey, 20 * SOL_DECIMALS);
+//     }
+
 //     console.log("\nInitializing bonding curve for:", userTokenMint.toBase58());
 
 //     // Проверяем, что нужные переменные userTokenMint, nDollarMint, etc. доступны из предыдущего шага
@@ -669,6 +683,26 @@
 //     assert(bondingCurveTokenAccount, "bondingCurveTokenAccount not set");
 //     assert(nDollarTreasury, "nDollarTreasury not set");
 //     assert(bondingCurveAuthorityPda, "bondingCurveAuthorityPda not set");
+
+//     const actualBalanceBeforeInit = await getTokenBalance(
+//       provider,
+//       bondingCurveTokenAccount
+//     );
+//     console.log(
+//       `Actual balance in bondingCurveTokenAccount before init: ${actualBalanceBeforeInit.toString()}`
+//     );
+//     const expectedBalance = BigInt(
+//       new BN(30_000_000).mul(new BN(10 ** tokenDecimals)).toString()
+//     );
+//     console.log(
+//       `Expected balance for bonding curve: ${expectedBalance.toString()}`
+//     );
+//     // Можно добавить assert здесь для ранней проверки
+//     assert.equal(
+//       actualBalanceBeforeInit,
+//       expectedBalance,
+//       "Balance mismatch BEFORE calling initializeCurve"
+//     );
 
 //     try {
 //       const txSignature = await bondingCurveProgram.methods
@@ -687,19 +721,36 @@
 //         })
 //         .rpc({ commitment: "confirmed" });
 
-//       console.log("Initialize bonding curve tx:", txSignature);
+//       // console.log("Initialize bonding curve tx:", txSignature);
 //       await provider.connection.confirmTransaction(txSignature, "confirmed");
 
-//       // Проверяем, что аккаунт кривой создан
+//       // console.log("Workspace Keys:", Object.keys(anchor.workspace));
+//       // console.log(
+//       //   "Is BondingCurve program defined?",
+//       //   !!anchor.workspace.BondingCurve
+//       // );
+//       // console.log(
+//       //   "Bonding Curve Program Object:",
+//       //   anchor.workspace.BondingCurve
+//       // );
+
+//       const curveAccountInfo = await provider.connection.getAccountInfo(
+//         bondingCurvePda
+//       );
+//       assert(
+//         curveAccountInfo,
+//         "Bonding curve state account not found after tx"
+//       );
+//       console.log("Curve PDA account info fetched successfully via web3.js");
+
+//       console.log(
+//         "Attempting to fetch BondingCurve account data via Anchor..."
+//       );
 //       const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
 //         bondingCurvePda
 //       );
-//       assert(curveAccount, "Bonding curve state account not found");
-//       assert.equal(
-//         curveAccount.isInitialized,
-//         true,
-//         "Bonding curve not initialized"
-//       );
+
+//       assert(curveAccount.isInitialized, "Bonding curve not initialized");
 //       assert.equal(
 //         curveAccount.mint.toBase58(),
 //         userTokenMint.toBase58(),
@@ -710,6 +761,7 @@
 //         nDollarMint.toBase58(),
 //         "N-Dollar mint mismatch"
 //       );
+
 //       console.log("Bonding curve state initialized:");
 //       console.log("  Slope Numerator:", curveAccount.slopeNumerator.toString());
 //       console.log(
@@ -742,32 +794,86 @@
 //     }
 //   });
 
+//   // Добавляем после других utility functions
+//   function calculateTokenValue(amount: bigint, curveAccount: any): bigint {
+//     const PRECISION_FACTOR = BigInt(1_000_000_000_000); // 10^12 как в контракте
+//     const tokenDecimalFactor = BigInt(10 ** curveAccount.tokenDecimals);
+
+//     // Переводим amount к базовым единицам (без децималов)
+//     const amountBase = amount / tokenDecimalFactor;
+
+//     const slopeNum = BigInt(curveAccount.slopeNumerator.toString());
+//     const slopeDenom = BigInt(curveAccount.slopeDenominator.toString());
+//     const intercept = BigInt(curveAccount.interceptScaled.toString());
+
+//     // Формула из контракта:
+//     // Для покупки: cost = (m/2 * ((x+dx)^2 - x^2) + c*dx)
+//     // Для текущей стоимости всех токенов: value = (m/2 * x^2 + c*x)
+//     const term1 =
+//       (slopeNum * amountBase * amountBase) / (slopeDenom * BigInt(2));
+//     const term2 = (intercept * amountBase) / PRECISION_FACTOR;
+
+//     // Переводим результат в N-Dollar lamports
+//     const nDollarDecimalFactor = BigInt(10 ** curveAccount.nDollarDecimals);
+//     const value = ((term1 + term2) * nDollarDecimalFactor) / PRECISION_FACTOR;
+
+//     return value;
+//   }
+
 //   // --- Шаг 8: Покупка Токенов с Кривой ---
 //   it("8. Buys tokens from the bonding curve", async () => {
 //     await sleep(1000);
 //     console.log("\nBuying tokens from bonding curve...");
+
+//     // Проверяем, что все необходимые переменные определены
+//     assert(userTokenMint, "userTokenMint not defined");
+//     assert(bondingCurvePda, "bondingCurvePda not defined");
+//     assert(bondingCurveTokenAccount, "bondingCurveTokenAccount not defined");
+//     assert(nDollarTreasury, "nDollarTreasury not defined");
+//     assert(bondingCurveAuthorityPda, "bondingCurveAuthorityPda not defined");
+//     assert(userTokenAccount, "userTokenAccount not defined");
+
+//     // Проверяем, что бондинг кривая инициализирована
+//     const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
+//       bondingCurvePda
+//     );
+//     assert(curveAccount.isInitialized, "Bonding curve not initialized");
+
+//     // Получаем начальный баланс и стоимость
+//     const userTokenBalanceBefore = await getTokenBalance(
+//       provider,
+//       userTokenAccount
+//     );
+//     console.log("\nТокены пользователя ДО покупки:");
+//     console.log(`Баланс: ${userTokenBalanceBefore.toString()}`);
+//     console.log(
+//       `Стоимость в N-Dollar: ${calculateTokenValue(
+//         userTokenBalanceBefore,
+//         curveAccount
+//       ).toString()}`
+//     );
 
 //     // Сколько токенов покупаем (например, 1000 с децималами)
 //     const amountToBuy = new BN(1000).mul(new BN(10 ** tokenDecimals));
 //     const amountToBuyBigInt = BigInt(amountToBuy.toString());
 
 //     // Получаем балансы ДО покупки
-//     const userTokenBalanceBefore = await getTokenBalance(
+//     const userNDollarBalanceBefore = await getTokenBalance(
 //       provider,
-//       userTokenAccount
+//       userNDollarAccount
 //     );
 //     const curveTokenBalanceBefore = await getTokenBalance(
 //       provider,
 //       bondingCurveTokenAccount
 //     );
-//     const userNDollarBalanceBefore = await getTokenBalance(
-//       provider,
-//       userNDollarAccount
-//     );
-//     const treasuryBalanceBefore = await getTokenBalance(
-//       provider,
-//       nDollarTreasury
-//     );
+
+//     // Проверяем баланс казны, если она существует
+//     let treasuryBalanceBefore = BigInt(0);
+//     try {
+//       treasuryBalanceBefore = await getTokenBalance(provider, nDollarTreasury);
+//     } catch (error) {
+//       console.log("N-Dollar treasury not created yet, assuming 0 balance");
+//     }
 
 //     console.log(`Attempting to buy ${amountToBuy.toString()} tokens`);
 //     console.log("Balances BEFORE buy:");
@@ -776,11 +882,11 @@
 //     console.log("  User N-Dollars:", userNDollarBalanceBefore.toString());
 //     console.log("  Treasury N-Dollars:", treasuryBalanceBefore.toString());
 
-//     assert(userNDollarBalanceBefore > 0, "User has no N-Dollars to buy"); // Простая проверка
+//     assert(userNDollarBalanceBefore > 0, "User has no N-Dollars to buy");
 
 //     try {
 //       const txSignature = await bondingCurveProgram.methods
-//         .buy(amountToBuy) // Передаем BN
+//         .buy(amountToBuy)
 //         .accounts({
 //           bondingCurve: bondingCurvePda,
 //           mint: userTokenMint,
@@ -789,8 +895,8 @@
 //           nDollarTreasury: nDollarTreasury,
 //           userTokenAccount: userTokenAccount,
 //           userNDollarAccount: userNDollarAccount,
-//           bondingCurveAuthority: bondingCurveAuthorityPda, // PDA
-//           userAuthority: wallet.publicKey, // Signer
+//           bondingCurveAuthority: bondingCurveAuthorityPda,
+//           userAuthority: wallet.publicKey,
 //           tokenProgram: TOKEN_PROGRAM_ID,
 //         })
 //         .rpc({ commitment: "confirmed" });
@@ -811,10 +917,14 @@
 //         provider,
 //         userNDollarAccount
 //       );
-//       const treasuryBalanceAfter = await getTokenBalance(
-//         provider,
-//         nDollarTreasury
-//       );
+
+//       // Проверяем баланс казны после покупки
+//       let treasuryBalanceAfter = BigInt(0);
+//       try {
+//         treasuryBalanceAfter = await getTokenBalance(provider, nDollarTreasury);
+//       } catch (error) {
+//         console.log("N-Dollar treasury not created yet, assuming 0 balance");
+//       }
 
 //       console.log("\nBalances AFTER buy:");
 //       console.log("  User Tokens:", userTokenBalanceAfter.toString());
@@ -848,6 +958,20 @@
 
 //       console.log(`User received ${tokensReceived} tokens.`);
 //       console.log(`User spent ${nDollarsSpent} N-Dollar lamports.`);
+
+//       // После покупки
+//       const userTokenBalanceAfterPost = await getTokenBalance(
+//         provider,
+//         userTokenAccount
+//       );
+//       console.log("\nТокены пользователя ПОСЛЕ покупки:");
+//       console.log(`Баланс: ${userTokenBalanceAfterPost.toString()}`);
+//       console.log(
+//         `Стоимость в N-Dollar: ${calculateTokenValue(
+//           userTokenBalanceAfterPost,
+//           curveAccount
+//         ).toString()}`
+//       );
 //     } catch (error) {
 //       console.error("Error buying from bonding curve:", error);
 //       if (error.logs) {
@@ -862,12 +986,36 @@
 //     await sleep(1000);
 //     console.log("\nSelling tokens to bonding curve...");
 
-//     // Сколько токенов продаем (например, половину купленных)
+//     // Проверяем, что все необходимые переменные определены
+//     assert(userTokenMint, "userTokenMint not defined");
+//     assert(bondingCurvePda, "bondingCurvePda not defined");
+//     assert(bondingCurveTokenAccount, "bondingCurveTokenAccount not defined");
+//     assert(nDollarTreasury, "nDollarTreasury not defined");
+//     assert(bondingCurveAuthorityPda, "bondingCurveAuthorityPda not defined");
+//     assert(userTokenAccount, "userTokenAccount not defined");
+
+//     // Проверяем, что бондинг кривая инициализирована
+//     const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
+//       bondingCurvePda
+//     );
+//     assert(curveAccount.isInitialized, "Bonding curve not initialized");
+
+//     // Получаем начальный баланс и стоимость
 //     const userTokenBalanceBeforeSell = await getTokenBalance(
 //       provider,
 //       userTokenAccount
 //     );
-//     const amountToSell = new BN(userTokenBalanceBeforeSell.toString()).divn(2); // Продаем половину
+//     console.log("\nТокены пользователя ДО продажи:");
+//     console.log(`Баланс: ${userTokenBalanceBeforeSell.toString()}`);
+//     console.log(
+//       `Стоимость в N-Dollar: ${calculateTokenValue(
+//         userTokenBalanceBeforeSell,
+//         curveAccount
+//       ).toString()}`
+//     );
+
+//     // Сколько токенов продаем (например, половину купленных)
+//     const amountToSell = new BN(10000000); // Продаем половину
 //     const amountToSellBigInt = BigInt(amountToSell.toString());
 
 //     assert(amountToSellBigInt > 0, "Cannot sell zero tokens");
@@ -881,10 +1029,14 @@
 //       provider,
 //       userNDollarAccount
 //     );
-//     const treasuryBalanceBefore = await getTokenBalance(
-//       provider,
-//       nDollarTreasury
-//     );
+
+//     // Проверяем баланс казны, если она существует
+//     let treasuryBalanceBefore = BigInt(0);
+//     try {
+//       treasuryBalanceBefore = await getTokenBalance(provider, nDollarTreasury);
+//     } catch (error) {
+//       console.log("N-Dollar treasury not created yet, assuming 0 balance");
+//     }
 
 //     console.log(`Attempting to sell ${amountToSell.toString()} tokens`);
 //     console.log("Balances BEFORE sell:");
@@ -893,11 +1045,11 @@
 //     console.log("  User N-Dollars:", userNDollarBalanceBefore.toString());
 //     console.log("  Treasury N-Dollars:", treasuryBalanceBefore.toString());
 
-//     assert(treasuryBalanceBefore > 0, "Treasury has no N-Dollars to pay"); // Проверка казны
+//     assert(treasuryBalanceBefore > 0, "Treasury has no N-Dollars to pay");
 
 //     try {
 //       const txSignature = await bondingCurveProgram.methods
-//         .sell(amountToSell) // Передаем BN
+//         .sell(amountToSell)
 //         .accounts({
 //           bondingCurve: bondingCurvePda,
 //           mint: userTokenMint,
@@ -906,8 +1058,8 @@
 //           nDollarTreasury: nDollarTreasury,
 //           userTokenAccount: userTokenAccount,
 //           userNDollarAccount: userNDollarAccount,
-//           bondingCurveAuthority: bondingCurveAuthorityPda, // PDA
-//           userAuthority: wallet.publicKey, // Signer
+//           bondingCurveAuthority: bondingCurveAuthorityPda,
+//           userAuthority: wallet.publicKey,
 //           tokenProgram: TOKEN_PROGRAM_ID,
 //         })
 //         .rpc({ commitment: "confirmed" });
@@ -928,10 +1080,14 @@
 //         provider,
 //         userNDollarAccount
 //       );
-//       const treasuryBalanceAfter = await getTokenBalance(
-//         provider,
-//         nDollarTreasury
-//       );
+
+//       // Проверяем баланс казны после продажи
+//       let treasuryBalanceAfter = BigInt(0);
+//       try {
+//         treasuryBalanceAfter = await getTokenBalance(provider, nDollarTreasury);
+//       } catch (error) {
+//         console.log("N-Dollar treasury not created yet, assuming 0 balance");
+//       }
 
 //       console.log("\nBalances AFTER sell:");
 //       console.log("  User Tokens:", userTokenBalanceAfter.toString());
@@ -967,6 +1123,20 @@
 
 //       console.log(`User sold ${tokensSold} tokens.`);
 //       console.log(`User received ${nDollarsReceived} N-Dollar lamports.`);
+
+//       // После продажи
+//       const userTokenBalanceAfterPost = await getTokenBalance(
+//         provider,
+//         userTokenAccount
+//       );
+//       console.log("\nТокены пользователя ПОСЛЕ продажи:");
+//       console.log(`Баланс: ${userTokenBalanceAfterPost.toString()}`);
+//       console.log(
+//         `Стоимость в N-Dollar: ${calculateTokenValue(
+//           userTokenBalanceAfterPost,
+//           curveAccount
+//         ).toString()}`
+//       );
 //     } catch (error) {
 //       console.error("Error selling to bonding curve:", error);
 //       if (error.logs) {

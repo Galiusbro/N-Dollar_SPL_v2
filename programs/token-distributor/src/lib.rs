@@ -130,12 +130,12 @@ pub struct DistributeTokens<'info> {
     )]
     pub user_token_account: Account<'info, TokenAccount>,
 
+    // #[account(
+    //     seeds = [b"bonding_curve".as_ref(), mint.key().as_ref()],
+    //     bump,
+    //     seeds::program = bonding_curve::ID // Убедитесь, что ID правильный
+    // )]
     /// CHECK: PDA derivation checked below (using bonding_curve module logic).
-    #[account(
-        seeds = [b"bonding_curve".as_ref(), mint.key().as_ref()],
-        bump,
-        seeds::program = bonding_curve::ID // Убедитесь, что ID правильный
-    )]
     pub bonding_curve_authority: AccountInfo<'info>,
 
     #[account(

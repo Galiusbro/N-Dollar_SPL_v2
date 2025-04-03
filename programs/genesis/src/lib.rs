@@ -26,7 +26,7 @@ const TOTAL_RENT_COST_ESTIMATE: u64 = MINT_RENT + METADATA_RENT + TOKEN_INFO_REN
 
 const DECIMALS: u8 = 9;
 const DECIMALS_FACTOR: u64 = 1_000_000_000; // 10^9
-const MAX_TOTAL_SUPPLY: u64 = 100_000_000 * DECIMALS_FACTOR; // 1 миллиард токенов
+const MAX_TOTAL_SUPPLY: u64 = 100_000_000 * DECIMALS_FACTOR; // 1 billion tokens
 
 const MAX_NAME_LENGTH: usize = 32;
 const MAX_SYMBOL_LENGTH: usize = 10;
@@ -132,7 +132,7 @@ use anchor_lang::solana_program::program::invoke;
         // msg!("SOL balance check passed");
 
         // --- Check SOL Balance for Rent ---
-        let user_sol_balance_after_swap = ctx.accounts.authority.lamports(); // Баланс ПОСЛЕ свапа
+        let user_sol_balance_after_swap = ctx.accounts.authority.lamports(); // Balance AFTER swap
         msg!("User SOL balance after swap: {}", user_sol_balance_after_swap);
         require!(
             user_sol_balance_after_swap >= TOTAL_RENT_COST_ESTIMATE,
@@ -229,21 +229,21 @@ use anchor_lang::solana_program::program::invoke;
         // let final_sol_balance = ctx.accounts.authority.lamports();
         // let sol_used_for_rent = user_sol_balance.saturating_sub(final_sol_balance);
         
-        // // Оставляем достаточно SOL для аренды всех аккаунтов
-        // let min_balance_to_keep = TOTAL_RENT_COST_ESTIMATE + 5000; // Аренда + небольшой запас на комиссию
+        // // Leave enough SOL for rent for all accounts
+        // let min_balance_to_keep = TOTAL_RENT_COST_ESTIMATE + 5000; // Rent + small buffer for fees
 
         // --- Handle Rent and SOL Refund ---
         let final_sol_balance = ctx.accounts.authority.lamports();
         let sol_used_for_rent = user_sol_balance_after_swap.saturating_sub(final_sol_balance);
 
-        // Пересчитываем минимальный баланс для сохранения, исходя из *фактически* созданных аккаунтов
-        // Mint + Metadata + TokenInfo + (если создали) Distributor ATA
+        // Recalculate minimum balance to keep, based on *actual* created accounts
+        // Mint + Metadata + TokenInfo + (if created) Distributor ATA
         let rent_for_created_accounts = ctx.accounts.mint.get_lamports()
             + ctx.accounts.metadata.get_lamports()
             + ctx.accounts.token_info.get_lamports()
             + ctx.accounts.distributor_token_account.get_lamports();
 
-        let min_balance_to_keep = rent_for_created_accounts + 5000; // Рента + небольшой запас
+        let min_balance_to_keep = rent_for_created_accounts + 5000; // Rent + small buffer
 
         if final_sol_balance > min_balance_to_keep {
             let refund_amount = final_sol_balance - min_balance_to_keep;
@@ -454,11 +454,11 @@ pub mint: Account<'info, Mint>,
 
     // Program for the liquidity pool CPI
     pub liquidity_pool_program: Program<'info, liquidity_pool::program::LiquidityPool>, // Use actual Program type
-    // Программа для CPI распределителя токенов
-    // pub token_distributor_program: Program<'info, token_distributor::program::TokenDistributor>, // Используйте фактический тип программы
+    // Program for the token distributor CPI
+    // pub token_distributor_program: Program<'info, token_distributor::program::TokenDistributor>, // Use actual Program type
 
-    // Программа для кривой связывания (необходима для производной PDA) - не вызывается через CPI здесь
-    // pub bonding_curve_program: Program<'info, bonding_curve::program::BondingCurve>, // Используйте фактический тип программы
+    // Program for the bonding curve (needed for PDA derivation) - not called via CPI here
+    // pub bonding_curve_program: Program<'info, bonding_curve::program::BondingCurve>, // Use actual Program type
 }
 
 #[account]

@@ -136,7 +136,6 @@ pub struct CreateToken<'info> {
     #[account(address = METADATA_PROGRAM_ID)]
     pub token_metadata_program: AccountInfo<'info>,
 }
-
 #[derive(Accounts)]
 pub struct InitializeLiquidityPool<'info> {
     #[account(mut)]
@@ -165,3 +164,4 @@ pub struct InitializeLiquidityPool<'info> {
     /// CHECK: This is the liquidity pool program
     pub liquidity_pool_program: AccountInfo<'info>,
 }
+

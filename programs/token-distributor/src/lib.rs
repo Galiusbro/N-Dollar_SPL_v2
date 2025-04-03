@@ -5,20 +5,20 @@ use anchor_spl::{
     token::{self, Mint, Token, TokenAccount, Transfer},
 };
 
-// !!! УКАЖИТЕ ЗДЕСЬ РЕАЛЬНЫЙ ID ВАШЕЙ ПРОГРАММЫ РАСПРЕДЕЛИТЕЛЯ !!!
+// !!! SPECIFY YOUR ACTUAL DISTRIBUTOR PROGRAM ID HERE !!!
 declare_id!("2Hy1wGdC5iqceaTnZC1qJeuoM4s6yEKHbYcjMMpbKYqp");
 
 #[program]
 pub mod token_distributor {
     use super::*;
 
-    // total_supply больше не нужен как аргумент инструкции,
-    // так как мы можем взять его из distributor_token_account.amount
+    // total_supply is no longer needed as an instruction argument,
+    // as we can get it from distributor_token_account.amount
     pub fn distribute_tokens(ctx: Context<DistributeTokens>) -> Result<()> {
         msg!("Distributing tokens...");
 
-        // Получаем total_supply из баланса аккаунта дистрибьютора
-        // Перезагружаем аккаунт на всякий случай, чтобы получить свежий баланс
+        // Get total_supply from the distributor account balance
+        // Reload the account just in case to get the latest balance
         ctx.accounts.distributor_token_account.reload()?;
         let total_supply = ctx.accounts.distributor_token_account.amount;
 
@@ -26,7 +26,7 @@ pub mod token_distributor {
         msg!("Total supply to distribute: {}", total_supply);
 
 
-        // ... (Расчеты bonding_curve_amount и user_amount как раньше) ...
+        // ... (Calculations for bonding_curve_amount and user_amount as before) ...
         let total_supply_u128 = total_supply as u128;
         let bonding_curve_amount_u128 = total_supply_u128
             .checked_mul(30)
@@ -45,13 +45,13 @@ pub mod token_distributor {
         );
 
 
-        // Проверка баланса больше не нужна здесь, так как мы его только что прочитали
+        // Balance check is no longer needed here, as we just read it
         // require!(
         //     ctx.accounts.distributor_token_account.amount == total_supply,
-        //     ErrorCode::InsufficientDistributorBalance // Можно переименовать ошибку или убрать проверку
+        //     ErrorCode::InsufficientDistributorBalance // Can rename the error or remove the check
         // );
 
-        // Находим PDA и bump
+        // Find PDA and bump
         let (_distributor_pda, distributor_bump) = Pubkey::find_program_address(
             &[b"distributor".as_ref(), ctx.accounts.mint.key().as_ref()],
             ctx.program_id,
@@ -60,7 +60,7 @@ pub mod token_distributor {
         let seeds = &[b"distributor".as_ref(), mint_key.as_ref(), &[distributor_bump]];
         let signer_seeds = &[&seeds[..]];
 
-        // Перевод 30% в Bonding Curve Account
+        // Transfer 30% to Bonding Curve Account
         if bonding_curve_amount > 0 {
              msg!("Transferring {} tokens to bonding curve account {}", bonding_curve_amount, ctx.accounts.bonding_curve_token_account.key());
              let cpi_accounts_bc = Transfer {
@@ -75,7 +75,7 @@ pub mod token_distributor {
             msg!("Skipping transfer to bonding curve (amount is zero)");
         }
 
-        // Перевод 70% (остаток) в User Account
+        // Transfer 70% (remainder) to User Account
         if user_amount > 0 {
             msg!("Transferring {} tokens to user account {}", user_amount, ctx.accounts.user_token_account.key());
             let cpi_accounts_user = Transfer {
@@ -91,8 +91,8 @@ pub mod token_distributor {
         }
 
         // Optional: Close the distributor token account
-        // ... (логика закрытия аккаунта, если нужна) ...
-        // Убедитесь, что `destination` для ренты указан правильно (например, user_authority)
+        // ... (account closing logic, if needed) ...
+        // Make sure the `destination` for rent is specified correctly (e.g., user_authority)
 
         msg!("Token distribution complete.");
         Ok(())
@@ -100,9 +100,9 @@ pub mod token_distributor {
 }
 
 #[derive(Accounts)]
-// Убираем total_supply из instruction, так как берем его из аккаунта
+// Remove total_supply from instruction data, as we take it from the account
 pub struct DistributeTokens<'info> {
-    pub mint: Account<'info, Mint>, // Нужен для PDA seeds
+    pub mint: Account<'info, Mint>, // Needed for PDA seeds
 
     /// CHECK: PDA derivation checked below. Authority for distributor_token_account.
     #[account(
@@ -112,19 +112,19 @@ pub struct DistributeTokens<'info> {
     pub distributor_authority: AccountInfo<'info>,
 
     #[account(
-        mut, // Будет уменьшаться баланс
+        mut, // Balance will decrease
         associated_token::mint = mint,
         associated_token::authority = distributor_authority, // PDA owns this account
     )]
     pub distributor_token_account: Account<'info, TokenAccount>,
 
-    // User Authority теперь должен быть Signer, т.к. он платит за ATA
-    #[account(mut)] // Получает ренту при закрытии distributor_token_account
+    // User Authority must now be a Signer, as they pay for ATAs
+    #[account(mut)] // Receives rent when distributor_token_account is closed
     pub user_authority: Signer<'info>,
 
     #[account(
-        init_if_needed, // Создаем ATA пользователя, если его нет
-        payer = user_authority, // Пользователь платит за свой ATA
+        init_if_needed, // Create user's ATA if it doesn't exist
+        payer = user_authority, // User pays for their own ATA
         associated_token::mint = mint,
         associated_token::authority = user_authority, // User owns this account
     )]
@@ -133,23 +133,23 @@ pub struct DistributeTokens<'info> {
     // #[account(
     //     seeds = [b"bonding_curve".as_ref(), mint.key().as_ref()],
     //     bump,
-    //     seeds::program = bonding_curve::ID // Убедитесь, что ID правильный
+    //     seeds::program = bonding_curve::ID // Make sure the ID is correct
     // )]
     /// CHECK: PDA derivation checked below (using bonding_curve module logic).
     pub bonding_curve_authority: AccountInfo<'info>,
 
     #[account(
-        init_if_needed, // Создаем ATA баиндинг кривой, если его нет
-        payer = user_authority, // Пользователь платит за этот ATA тоже? Или нужен другой плательщик?
+        init_if_needed, // Create bonding curve's ATA if it doesn't exist
+        payer = user_authority, // Does the user pay for this ATA too? Or need another payer?
         associated_token::mint = mint,
         associated_token::authority = bonding_curve_authority, // Bonding curve PDA owns this
     )]
     pub bonding_curve_token_account: Account<'info, TokenAccount>,
 
-    // --- Необходимые программы ---
+    // --- Required Programs ---
     pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>, // Нужен для init_if_needed
-    pub associated_token_program: Program<'info, AssociatedToken>, // Нужен для init_if_needed
+    pub system_program: Program<'info, System>, // Needed for init_if_needed
+    pub associated_token_program: Program<'info, AssociatedToken>, // Needed for init_if_needed
 }
 
 #[error_code]
@@ -158,7 +158,7 @@ pub enum ErrorCode {
     CalculationOverflow,
     #[msg("Total supply cannot be zero")]
     ZeroSupply,
-    // Можно убрать или переименовать, если проверка не нужна
+    // Can remove or rename if the check is not needed
     // #[msg("Distributor token account has insufficient balance")]
     // InsufficientDistributorBalance,
 }

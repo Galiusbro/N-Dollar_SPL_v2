@@ -10,8 +10,8 @@ bonding-curve = "GvFsepxBQ2q8xZ3PYYDooMdnMBzWQKkpKavzT7vM83rZ"
 genesis = "2vgQn1c2JPWGHYcjhBcdeXKCQCSWfs8gYn6CcNhMKwMG"
 liquidity-pool = "B24yupzEDjF7Z9frnDG16uAwH1ZYfB57kuzh8jwDsL83"
 n-dollar = "3Mdve11qmHuVZVe9YgCzA1d3hcjyamm2Jiz3VfHSJgEQ"
-referral-rewards = "8YxBBLHPCAMQWkxD8WD1X1XyuUZH5u58wB8R4Q31eGCb"
 token-distributor = "2Hy1wGdC5iqceaTnZC1qJeuoM4s6yEKHbYcjMMpbKYqp"
+referral-program = "DMQh8Evpe3y4DzAWxx1rhLuGpnZGDvFSPLJvD9deQQfX"
 
 [registry]
 url = "https://api.apr.dev"

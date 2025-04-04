@@ -145,8 +145,8 @@ pub mod bonding_curve {
 
         let initial_supply = curve.initial_bonding_supply;
         let dx: u128 = amount_to_buy.into();
-        let x1: u128 = current_supply.into();
-        let x0: u128 = final_supply.into();
+        let _x1: u128 = current_supply.into();
+        let _x0: u128 = final_supply.into();
 
         // Calculate tokens sold before (y0) and after (y1) the buy
         // y = initial_supply - x
@@ -288,8 +288,8 @@ pub mod bonding_curve {
 
         let initial_supply = curve.initial_bonding_supply;
         let dx: u128 = amount_to_sell.into();
-        let x0: u128 = current_supply.into();
-        let x1: u128 = final_supply.into();
+        let _x0: u128 = current_supply.into();
+        let _x1: u128 = final_supply.into();
 
         // Calculate tokens sold before (y1) and after (y0) the sell
         // y = initial_supply - x

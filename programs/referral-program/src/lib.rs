@@ -1,11 +1,10 @@
 // referral_program/src/lib.rs
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::AssociatedToken,
-    token::{self, Mint, Token, TokenAccount, Transfer},
-};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("DMQh8Evpe3y4DzAWxx1rhLuGpnZGDvFSPLJvD9deQQfX");
+
+const REWARD_AMOUNT: u64 = 1_000_000_000; // 1 токен с 9 децималами
 
 #[program]
 pub mod referral_program {
@@ -14,168 +13,122 @@ pub mod referral_program {
     pub fn process_referral(ctx: Context<ProcessReferral>) -> Result<()> {
         msg!("Processing referral...");
 
-        // Check if this referral has already been processed
-        let referral_status = &ctx.accounts.referral_status;
-        require!(!referral_status.processed, ErrorCode::AlreadyProcessed);
-
-        // Get token decimals to calculate the reward
-        let token_decimals = ctx.accounts.mint.decimals;
-        let reward_amount = 1 * 10u64.pow(token_decimals as u32); // 1 token with decimals
-        msg!("Reward amount (lamports): {}", reward_amount);
-
-        // Check if there are enough funds in the treasury
-        let required_total_reward = reward_amount
-            .checked_mul(2) // Reward for referrer and referee
-            .ok_or(ErrorCode::CalculationOverflow)?;
+        // Проверяем, достаточно ли средств в казне реферальной программы
+        let required_amount = REWARD_AMOUNT.checked_mul(2).ok_or(ErrorCode::CalculationOverflow)?;
         require!(
-            ctx.accounts.referral_treasury.amount >= required_total_reward,
+            ctx.accounts.referral_treasury_token_account.amount >= required_amount,
             ErrorCode::InsufficientTreasuryBalance
         );
 
-        // Get bump for the treasury authority PDA
+        // Находим PDA казны этой программы и бамп
         let mint_key = ctx.accounts.mint.key();
-        let (_authority_pda, authority_bump) = Pubkey::find_program_address(
-            &[b"referral".as_ref(), mint_key.as_ref()],
-            ctx.program_id,
-        );
-
-        // Create signer seeds
-        let authority_seeds = &[
-            b"referral".as_ref(),
+        // Сиды для ПОДПИСИ CPI (принадлежат ЭТОЙ программе)
+        let seeds = &[
+            b"referral_treasury".as_ref(), // <-- Новый сид
             mint_key.as_ref(),
-            &[authority_bump],
+            &[ctx.bumps.referral_treasury_authority], // Используем бамп для этого PDA
         ];
-        let signer = &[&authority_seeds[..]];
+        let signer_seeds = &[&seeds[..]];
 
-        // 1. Pay reward to the referrer
+        // Перевод награды первому рефералу
         msg!(
-            "Paying reward to referrer: {}",
-            ctx.accounts.referrer_token_account.key()
+            "Transferring {} tokens to referee 1: {}",
+            REWARD_AMOUNT,
+            ctx.accounts.referee1_token_account.key()
         );
-        let cpi_accounts_referrer = Transfer {
-            from: ctx.accounts.referral_treasury.to_account_info(),
-            to: ctx.accounts.referrer_token_account.to_account_info(),
-            authority: ctx.accounts.referral_authority.to_account_info(), // PDA signs
+        let cpi_accounts_ref1 = Transfer {
+            from: ctx.accounts.referral_treasury_token_account.to_account_info(), // <-- Из казны рефералки
+            to: ctx.accounts.referee1_token_account.to_account_info(),
+            authority: ctx.accounts.referral_treasury_authority.to_account_info(), // <-- PDA рефералки
         };
-        let cpi_program = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx_referrer =
-            CpiContext::new_with_signer(cpi_program.clone(), cpi_accounts_referrer, signer);
-        token::transfer(cpi_ctx_referrer, reward_amount)?;
+        let cpi_program_ref1 = ctx.accounts.token_program.to_account_info();
+        token::transfer(
+            CpiContext::new(cpi_program_ref1, cpi_accounts_ref1)
+                .with_signer(signer_seeds), // <-- Подписываем своим PDA
+            REWARD_AMOUNT,
+        )?;
 
-        // 2. Pay reward to the referee
+        // Перевод награды второму рефералу
         msg!(
-            "Paying reward to referee: {}",
-            ctx.accounts.referee_token_account.key()
+            "Transferring {} tokens to referee 2: {}",
+            REWARD_AMOUNT,
+            ctx.accounts.referee2_token_account.key()
         );
-        let cpi_accounts_referee = Transfer {
-            from: ctx.accounts.referral_treasury.to_account_info(),
-            to: ctx.accounts.referee_token_account.to_account_info(),
-            authority: ctx.accounts.referral_authority.to_account_info(), // PDA signs
+        let cpi_accounts_ref2 = Transfer {
+            from: ctx.accounts.referral_treasury_token_account.to_account_info(), // <-- Из казны рефералки
+            to: ctx.accounts.referee2_token_account.to_account_info(),
+            authority: ctx.accounts.referral_treasury_authority.to_account_info(), // <-- PDA рефералки
         };
-        let cpi_ctx_referee =
-            CpiContext::new_with_signer(cpi_program, cpi_accounts_referee, signer);
-        token::transfer(cpi_ctx_referee, reward_amount)?;
+        let cpi_program_ref2 = ctx.accounts.token_program.to_account_info();
+        token::transfer(
+            CpiContext::new(cpi_program_ref2, cpi_accounts_ref2)
+                .with_signer(signer_seeds), // <-- Подписываем своим PDA
+            REWARD_AMOUNT,
+        )?;
 
-        // Mark referral as processed
-        let referral_status = &mut ctx.accounts.referral_status;
-        referral_status.processed = true;
-        referral_status.referrer = ctx.accounts.referrer.key();
-        referral_status.referee = ctx.accounts.referee.key();
-        referral_status.mint = ctx.accounts.mint.key();
-        msg!(
-            "Referral processed for referee: {}",
-            ctx.accounts.referee.key()
-        );
-
+        msg!("Referral processed successfully.");
         Ok(())
     }
 }
 
 #[derive(Accounts)]
 pub struct ProcessReferral<'info> {
-    // --- Accounts for validation and payouts ---
-    pub mint: Account<'info, Mint>, // Token used for reward
+    pub mint: Account<'info, Mint>, // Mint токена для награды
 
-    /// CHECK: PDA owning the treasury. Verified via seeds + program_id.
+    /// CHECK: PDA казны, принадлежащий ЭТОЙ программе.
+    /// Сиды: [b"referral_treasury", mint.key().as_ref()]
+    /// Бамп проверяется Anchor относительно ID этой программы.
     #[account(
-        seeds = [b"referral".as_ref(), mint.key().as_ref()],
-        bump,
+        seeds = [b"referral_treasury".as_ref(), mint.key().as_ref()], // <-- Новый сид
+        bump, // Anchor найдет бамп для ЭТОЙ программы
+        // seeds::program больше не нужен
     )]
-    pub referral_authority: AccountInfo<'info>,
+    pub referral_treasury_authority: AccountInfo<'info>,
 
     #[account(
-        mut, // Funds are debited from here
+        mut, // Баланс казны будет уменьшаться
         associated_token::mint = mint,
-        associated_token::authority = referral_authority, // Verify treasury owner
-        constraint = referral_treasury.amount > 0 @ ErrorCode::InsufficientTreasuryBalance // Extra check
+        associated_token::authority = referral_treasury_authority, // Казна принадлежит PDA ЭТОЙ программы
     )]
-    pub referral_treasury: Account<'info, TokenAccount>, // Referral program treasury
+    pub referral_treasury_token_account: Account<'info, TokenAccount>,
 
-    /// CHECK: Referrer - just an address, nothing to check except not equal to referee?
-    #[account(
-         constraint = referrer.key() != referee.key() @ ErrorCode::ReferrerCannotBeReferee
-    )]
-    pub referrer: AccountInfo<'info>, // Who invited
+    // Аккаунт, инициирующий реферальную транзакцию
+    #[account(mut)]
+    pub referrer: Signer<'info>,
 
-    /// CHECK: Referee - new user. Verified via referral_status.
-    pub referee: AccountInfo<'info>, // Who was invited
-
-    // Referrer's ATA to receive the reward
+    // Токен-аккаунт первого реферала
     #[account(
         mut,
-        associated_token::mint = mint,
-        associated_token::authority = referrer, // Ensure this is the referrer's ATA
+        constraint = referee1_token_account.mint == mint.key() @ ErrorCode::IncorrectMint,
     )]
-    pub referrer_token_account: Account<'info, TokenAccount>,
+    pub referee1_token_account: Account<'info, TokenAccount>,
 
-    // Referee's ATA to receive the reward
-    // May not exist, hence init_if_needed
-    #[account(
-        init_if_needed,
-        payer = payer, // Who pays for ATA creation if it doesn't exist
-        // mut,
-        associated_token::mint = mint,
-        associated_token::authority = referee, // Ensure this is the referee's ATA
+    // Токен-аккаунт второго реферала
+     #[account(
+        mut,
+        constraint = referee2_token_account.mint == mint.key() @ ErrorCode::IncorrectMint,
     )]
-    pub referee_token_account: Account<'info, TokenAccount>,
+    pub referee2_token_account: Account<'info, TokenAccount>,
 
-    // --- Account for tracking status ---
-    #[account(
-        init, // Created on first processing
-        payer = payer,
-        space = 8 + ReferralStatus::INIT_SPACE,
-        seeds = [b"status".as_ref(), mint.key().as_ref(), referee.key().as_ref()], // Unique for mint+referee
-        bump
-    )]
-    pub referral_status: Account<'info, ReferralStatus>,
-
-    // --- System Accounts ---
-    #[account(mut)]
-    pub payer: Signer<'info>, // Who pays for creating status and referee_token_account
+    // --- Необходимые программы ---
     pub token_program: Program<'info, Token>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
+    // SystemProgram может понадобиться, если бы мы создавали аккаунты рефералов
+    // pub system_program: Program<'info, System>,
+    // AssociatedTokenProgram не нужен, т.к. мы не создаем ATA здесь
+    // pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
-// State for tracking processed referrals
-#[account]
-#[derive(InitSpace)]
-pub struct ReferralStatus {
-    pub processed: bool,     // 1
-    pub referrer: Pubkey,    // 32
-    pub referee: Pubkey,     // 32
-    pub mint: Pubkey,        // 32
-}
 
 #[error_code]
 pub enum ErrorCode {
-    #[msg("Referral already processed for this referee and mint.")]
+    #[msg("Referral already processed for these participants and mint.")]
     AlreadyProcessed,
-    #[msg("Insufficient balance in treasury for rewards.")]
+    #[msg("Insufficient balance in referral treasury.")] // Обновил сообщение
     InsufficientTreasuryBalance,
     #[msg("Calculation overflow.")]
     CalculationOverflow,
     #[msg("Referrer cannot be the same as the referee.")]
     ReferrerCannotBeReferee,
+    #[msg("Incorrect mint for referee token account.")] // Обновил сообщение
+    IncorrectMint,
 }

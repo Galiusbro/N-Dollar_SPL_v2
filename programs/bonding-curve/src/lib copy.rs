@@ -10,7 +10,6 @@ declare_id!("GvFsepxBQ2q8xZ3PYYDooMdnMBzWQKkpKavzT7vM83rZ");
 const PRECISION_FACTOR: u128 = 1_000_000_000_000; // 10^12
 
 // --- Curve specification constants from the document ---
-// TODO: Future consideration - The price must increase exponentially with each coin purchased, rewarding early adopters.
 const TOTAL_BONDING_TOKENS_FOR_CURVE: u64 = 40_000_000;
 const START_PRICE_NUMERATOR: u128 = 5;
 const START_PRICE_DENOMINATOR: u128 = 100_000; // 0.00005

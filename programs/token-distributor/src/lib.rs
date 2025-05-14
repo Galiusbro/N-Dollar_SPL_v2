@@ -140,10 +140,19 @@ pub struct DistributeTokens<'info> {
     #[account(mut, associated_token::mint = mint, associated_token::authority = distributor_authority)]
     pub distributor_token_account: Account<'info, TokenAccount>,
 
-    #[account(mut)]
-    pub user_authority: Signer<'info>, // Плательщик за создание ATA
+    /// The user who will own the user_token_account if created.
+    pub user_authority: Signer<'info>,
 
-    #[account(init_if_needed, payer = user_authority, associated_token::mint = mint, associated_token::authority = user_authority)]
+    /// Account paying for the rent of new associated token accounts.
+    #[account(mut)]
+    pub rent_payer: Signer<'info>, // Pays for ATA creation
+
+    #[account(
+        init_if_needed,
+        payer = rent_payer, // Rent payer
+        associated_token::mint = mint,
+        associated_token::authority = user_authority // The actual owner
+    )]
     pub user_token_account: Account<'info, TokenAccount>,
 
     /// CHECK: PDA для авторитета аккаунта кривой (bonding curve).
@@ -151,7 +160,8 @@ pub struct DistributeTokens<'info> {
 
     #[account(
         init_if_needed,
-        payer = user_authority,
+        // payer = user_authority,
+        payer = rent_payer, // Payer changed
         associated_token::mint = mint,
         associated_token::authority = bonding_curve_authority,
     )]
@@ -169,7 +179,8 @@ pub struct DistributeTokens<'info> {
 
     #[account(
         init_if_needed, // Создаем ATA для казны реферальной программы, если его нет
-        payer = user_authority, // Плательщик - инициатор создания токена
+        // payer = user_authority,
+        payer = rent_payer, // Payer changed
         associated_token::mint = mint,
         associated_token::authority = referral_treasury_authority, // Владелец ATA - PDA реферальной программы
     )]
@@ -182,7 +193,8 @@ pub struct DistributeTokens<'info> {
 
     #[account(
         init_if_needed, // Создаем ATA для AI Agent, если его нет
-        payer = user_authority, // Плательщик - инициатор дистрибуции
+        // payer = user_authority,
+        payer = rent_payer, // Payer changed
         associated_token::mint = mint,
         associated_token::authority = ai_agent_authority, // Владелец ATA - AI Agent
     )]

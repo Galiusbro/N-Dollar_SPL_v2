@@ -418,7 +418,8 @@ pub mod bonding_curve {
 pub struct InitializeCurve<'info> {
     #[account(
         init,
-        payer = authority,
+        // payer = authority,
+        payer = rent_payer,
         space = 8 + BondingCurve::INIT_SPACE,
         seeds = [b"bonding_curve", mint.key().as_ref()],
         bump
@@ -432,13 +433,16 @@ pub struct InitializeCurve<'info> {
     pub bonding_curve_token_account: Account<'info, TokenAccount>,
     #[account(
         init,
-        payer = authority,
+        // payer = authority,
+        payer = rent_payer,
         associated_token::mint = n_dollar_mint,
         associated_token::authority = bonding_curve,
     )]
     pub n_dollar_treasury: Account<'info, TokenAccount>,
     #[account(mut)]
     pub authority: Signer<'info>,
+    #[account(mut)]
+    pub rent_payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,

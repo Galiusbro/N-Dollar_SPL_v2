@@ -28,35 +28,35 @@ pub mod token_distributor {
         require!(total_supply > 0, ErrorCode::ZeroSupply);
         msg!("Total supply to distribute: {}", total_supply);
 
-        // Расчеты: 10% казне реферальной программы, 40% кривой, 50% AI агенту
+        // Расчеты: 20% пользователю, 30% кривой, остаток (50%) казне реферальной программы
         let total_supply_u128 = total_supply as u128;
 
-        let referral_treasury_amount_u128 = total_supply_u128
-            .checked_mul(10) // 10% for referral treasury (viral distribution)
+        let user_amount_u128 = total_supply_u128
+            .checked_mul(20)
             .ok_or(ErrorCode::CalculationOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::CalculationOverflow)?;
-        let referral_treasury_amount = referral_treasury_amount_u128 as u64;
+        let user_amount = user_amount_u128 as u64;
 
         let bonding_curve_amount_u128 = total_supply_u128
-            .checked_mul(40) // 40% for bonding curve
+            .checked_mul(30)
             .ok_or(ErrorCode::CalculationOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::CalculationOverflow)?;
         let bonding_curve_amount = bonding_curve_amount_u128 as u64;
 
-        // Оставшаяся часть (50%) идет AI агенту
-        let ai_agent_amount = total_supply
-            .checked_sub(referral_treasury_amount)
+        // Оставшаяся часть идет казне реферальной программы
+        let referral_treasury_amount = total_supply
+            .checked_sub(user_amount)
             .ok_or(ErrorCode::CalculationOverflow)?
             .checked_sub(bonding_curve_amount)
             .ok_or(ErrorCode::CalculationOverflow)?;
 
         msg!(
-            "Calculated distribution - Referral Treasury: {}, Bonding Curve: {}, AI Agent: {}",
-            referral_treasury_amount,
+            "Calculated distribution - User: {}, Bonding Curve: {}, Referral Treasury: {}",
+            user_amount,
             bonding_curve_amount,
-            ai_agent_amount
+            referral_treasury_amount
         );
 
         // Находим PDA и bump для distributor_authority (ЭТОЙ программы)
@@ -68,26 +68,24 @@ pub mod token_distributor {
         let distributor_seeds = &[b"distributor".as_ref(), mint_key.as_ref(), &[distributor_bump]];
         let distributor_signer_seeds = &[&distributor_seeds[..]];
 
-         // --- Переводы ---
-
-        // Перевод 10% на аккаунт казны РЕФЕРАЛЬНОЙ ПРОГРАММЫ
-        if referral_treasury_amount > 0 {
-             msg!("Transferring {} tokens to REFERRAL treasury account {}", referral_treasury_amount, ctx.accounts.referral_treasury_token_account.key());
-             let cpi_accounts_treasury = Transfer {
-                 from: ctx.accounts.distributor_token_account.to_account_info(),
-                 to: ctx.accounts.referral_treasury_token_account.to_account_info(), // <-- Направляем в казну рефералки
-                 authority: ctx.accounts.distributor_authority.to_account_info(),      // <-- Подписывает PDA дистрибьютора
-             };
-             let cpi_program_treasury = ctx.accounts.token_program.to_account_info();
-             token::transfer(
-                 CpiContext::new_with_signer(cpi_program_treasury, cpi_accounts_treasury, distributor_signer_seeds),
-                 referral_treasury_amount
-             )?;
+         // Перевод 20% на аккаунт пользователя
+        if user_amount > 0 {
+            msg!("Transferring {} tokens to user account {}", user_amount, ctx.accounts.user_token_account.key());
+            let cpi_accounts_user = Transfer {
+                from: ctx.accounts.distributor_token_account.to_account_info(),
+                to: ctx.accounts.user_token_account.to_account_info(),
+                authority: ctx.accounts.distributor_authority.to_account_info(), // distributor PDA
+            };
+            let cpi_program_user = ctx.accounts.token_program.to_account_info();
+            token::transfer(
+                CpiContext::new_with_signer(cpi_program_user, cpi_accounts_user, distributor_signer_seeds),
+                user_amount
+            )?;
         } else {
-            msg!("Skipping transfer to referral treasury (amount is zero)");
+            msg!("Skipping transfer to user (amount is zero)");
         }
 
-        // Перевод 40% на аккаунт кривой
+        // Перевод 30% на аккаунт кривой
         if bonding_curve_amount > 0 {
              msg!("Transferring {} tokens to bonding curve account {}", bonding_curve_amount, ctx.accounts.bonding_curve_token_account.key());
              let cpi_accounts_bc = Transfer {
@@ -104,21 +102,21 @@ pub mod token_distributor {
             msg!("Skipping transfer to bonding curve (amount is zero)");
         }
 
-        // Перевод 50% (остаток) на аккаунт AI агента
-        if ai_agent_amount > 0 {
-             msg!("Transferring {} tokens to AI Agent account {}", ai_agent_amount, ctx.accounts.ai_agent_token_account.key());
-             let cpi_accounts_ai = Transfer {
+        // Перевод 50% (остаток) на аккаунт казны РЕФЕРАЛЬНОЙ ПРОГРАММЫ
+        if referral_treasury_amount > 0 {
+             msg!("Transferring {} tokens to REFERRAL treasury account {}", referral_treasury_amount, ctx.accounts.referral_treasury_token_account.key());
+             let cpi_accounts_treasury = Transfer {
                  from: ctx.accounts.distributor_token_account.to_account_info(),
-                 to: ctx.accounts.ai_agent_token_account.to_account_info(), // <-- Направляем AI агенту
+                 to: ctx.accounts.referral_treasury_token_account.to_account_info(), // <-- Направляем в казну рефералки
                  authority: ctx.accounts.distributor_authority.to_account_info(),      // <-- Подписывает PDA дистрибьютора
              };
-             let cpi_program_ai = ctx.accounts.token_program.to_account_info();
+             let cpi_program_treasury = ctx.accounts.token_program.to_account_info();
              token::transfer(
-                 CpiContext::new_with_signer(cpi_program_ai, cpi_accounts_ai, distributor_signer_seeds),
-                 ai_agent_amount
+                 CpiContext::new_with_signer(cpi_program_treasury, cpi_accounts_treasury, distributor_signer_seeds),
+                 referral_treasury_amount
              )?;
         } else {
-            msg!("Skipping transfer to AI Agent (amount is zero)");
+            msg!("Skipping transfer to referral treasury (amount is zero)");
         }
 
         msg!("Token distribution complete.");
@@ -140,19 +138,10 @@ pub struct DistributeTokens<'info> {
     #[account(mut, associated_token::mint = mint, associated_token::authority = distributor_authority)]
     pub distributor_token_account: Account<'info, TokenAccount>,
 
-    /// The user who will own the user_token_account if created.
-    pub user_authority: Signer<'info>,
-
-    /// Account paying for the rent of new associated token accounts.
     #[account(mut)]
-    pub rent_payer: Signer<'info>, // Pays for ATA creation
+    pub user_authority: Signer<'info>, // Плательщик за создание ATA
 
-    #[account(
-        init_if_needed,
-        payer = rent_payer, // Rent payer
-        associated_token::mint = mint,
-        associated_token::authority = user_authority // The actual owner
-    )]
+    #[account(init_if_needed, payer = user_authority, associated_token::mint = mint, associated_token::authority = user_authority)]
     pub user_token_account: Account<'info, TokenAccount>,
 
     /// CHECK: PDA для авторитета аккаунта кривой (bonding curve).
@@ -160,8 +149,7 @@ pub struct DistributeTokens<'info> {
 
     #[account(
         init_if_needed,
-        // payer = user_authority,
-        payer = rent_payer, // Payer changed
+        payer = user_authority,
         associated_token::mint = mint,
         associated_token::authority = bonding_curve_authority,
     )]
@@ -179,26 +167,11 @@ pub struct DistributeTokens<'info> {
 
     #[account(
         init_if_needed, // Создаем ATA для казны реферальной программы, если его нет
-        // payer = user_authority,
-        payer = rent_payer, // Payer changed
+        payer = user_authority, // Плательщик - инициатор создания токена
         associated_token::mint = mint,
         associated_token::authority = referral_treasury_authority, // Владелец ATA - PDA реферальной программы
     )]
     pub referral_treasury_token_account: Account<'info, TokenAccount>,
-
-    // --- Аккаунты для AI Agent ---
-
-    /// CHECK: Публичный ключ кошелька AI Agent (передается извне).
-    pub ai_agent_authority: AccountInfo<'info>,
-
-    #[account(
-        init_if_needed, // Создаем ATA для AI Agent, если его нет
-        // payer = user_authority,
-        payer = rent_payer, // Payer changed
-        associated_token::mint = mint,
-        associated_token::authority = ai_agent_authority, // Владелец ATA - AI Agent
-    )]
-    pub ai_agent_token_account: Account<'info, TokenAccount>,
 
     // --- Необходимые программы --- 
     pub token_program: Program<'info, Token>,

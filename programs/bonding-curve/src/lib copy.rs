@@ -10,7 +10,6 @@ declare_id!("GvFsepxBQ2q8xZ3PYYDooMdnMBzWQKkpKavzT7vM83rZ");
 const PRECISION_FACTOR: u128 = 1_000_000_000_000; // 10^12
 
 // --- Curve specification constants from the document ---
-// TODO: Future consideration - The price must increase exponentially with each coin purchased, rewarding early adopters.
 const TOTAL_BONDING_TOKENS_FOR_CURVE: u64 = 40_000_000;
 const START_PRICE_NUMERATOR: u128 = 5;
 const START_PRICE_DENOMINATOR: u128 = 100_000; // 0.00005
@@ -418,8 +417,7 @@ pub mod bonding_curve {
 pub struct InitializeCurve<'info> {
     #[account(
         init,
-        // payer = authority,
-        payer = rent_payer,
+        payer = authority,
         space = 8 + BondingCurve::INIT_SPACE,
         seeds = [b"bonding_curve", mint.key().as_ref()],
         bump
@@ -433,16 +431,13 @@ pub struct InitializeCurve<'info> {
     pub bonding_curve_token_account: Account<'info, TokenAccount>,
     #[account(
         init,
-        // payer = authority,
-        payer = rent_payer,
+        payer = authority,
         associated_token::mint = n_dollar_mint,
         associated_token::authority = bonding_curve,
     )]
     pub n_dollar_treasury: Account<'info, TokenAccount>,
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(mut)]
-    pub rent_payer: Signer<'info>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,

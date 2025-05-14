@@ -68,13 +68,13 @@ use anchor_lang::solana_program::program::invoke;
 
         msg!("Basic validations passed");
 
-        // Check if the user (payer) has enough SOL for rent
-        let required_lamports = TOTAL_RENT_COST; // Use the calculated constant
-        require!(
-            ctx.accounts.authority.lamports() >= required_lamports,
-            ErrorCode::InsufficientSolForRent
-        );
-        msg!("User SOL balance sufficient for rent ({} required)", required_lamports);
+        // // Check if the user (payer) has enough SOL for rent -- COMMENTED OUT
+        // let required_lamports = TOTAL_RENT_COST; // Use the calculated constant
+        // require!(
+        //     ctx.accounts.authority.lamports() >= required_lamports,
+        //     ErrorCode::InsufficientSolForRent
+        // );
+        // msg!("User SOL balance sufficient for rent ({} required)", required_lamports);
 
         // --- Create Metadata ---
         msg!("Creating token metadata...");
@@ -82,10 +82,12 @@ use anchor_lang::solana_program::program::invoke;
             ctx.accounts.metadata.to_account_info(),
             ctx.accounts.mint.to_account_info(),
             ctx.accounts.authority.to_account_info(),
-            ctx.accounts.authority.to_account_info(),
+            // ctx.accounts.authority.to_account_info(),
+            ctx.accounts.rent_payer.to_account_info(),
             ctx.accounts.authority.to_account_info(),
             ctx.accounts.system_program.to_account_info(),
             ctx.accounts.rent.to_account_info(),
+            ctx.accounts.token_metadata_program.to_account_info(), //??
         ];
 
         let creators = vec![
@@ -110,7 +112,8 @@ use anchor_lang::solana_program::program::invoke;
             metadata: ctx.accounts.metadata.key(),
             mint: ctx.accounts.mint.key(),
             mint_authority: ctx.accounts.authority.key(),
-            payer: ctx.accounts.authority.key(),
+            // payer: ctx.accounts.authority.key(),
+            payer: ctx.accounts.rent_payer.key(),
             update_authority: (ctx.accounts.authority.key(), true),
             system_program: ctx.accounts.system_program.key(),
             rent: Some(ctx.accounts.rent.key()),
@@ -169,7 +172,7 @@ pub enum ErrorCode {
     InvalidMetadataAccount,
     #[msg("Invalid token account")]
     InvalidTokenAccount,
-    #[msg("Insufficient SOL balance in authority account for rent")]
+    #[msg("Insufficient SOL balance in rent payer account for rent")]
     InsufficientSolForRent,
     #[msg("Invalid supply")]
     InvalidSupply,
@@ -197,7 +200,8 @@ pub struct CreateUserToken<'info> {
 // ---- Token Creation Accounts ----
 #[account(
     init,
-    payer = authority,
+    // payer = authority,
+    payer = rent_payer,
     mint::decimals = DECIMALS,
     mint::authority = authority.key(),
     mint::freeze_authority = authority.key(),
@@ -220,7 +224,8 @@ pub mint: Account<'info, Mint>,
 
     #[account(
         init,
-        payer = authority,
+        // payer = authority,
+        payer = rent_payer,
         space = 8 + std::mem::size_of::<TokenInfo>(),
         seeds = [b"token_info", mint.key().as_ref()],
         bump
@@ -229,6 +234,10 @@ pub mint: Account<'info, Mint>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
+
+    /// Account paying for the rent of new accounts.
+    #[account(mut)]
+    pub rent_payer: Signer<'info>,
 
     // ---- Liquidity Pool Accounts ----
     // #[account(
@@ -270,7 +279,8 @@ pub mint: Account<'info, Mint>,
 
     #[account(
         init_if_needed, // Initialize distributor's ATA if it doesn't exist
-        payer = authority,
+        // payer = authority,
+        payer = rent_payer,
         associated_token::mint = mint,
         associated_token::authority = distributor_authority, // PDA is the authority
     )]

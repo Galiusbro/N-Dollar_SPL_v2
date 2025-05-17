@@ -4,8 +4,21 @@ use anchor_spl::{
     token::{self, Mint, Token, TokenAccount, Transfer},
 };
 use std::convert::TryInto;
+use anchor_lang::solana_program::clock::Clock;
 
 declare_id!("GvFsepxBQ2q8xZ3PYYDooMdnMBzWQKkpKavzT7vM83rZ");
+
+#[cfg(debug_assertions)]
+macro_rules! debug_msg {
+    ($($arg:tt)*) => {
+        msg!($($arg)*)
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! debug_msg {
+    ($($arg:tt)*) => {};
+}
 
 const PRECISION_FACTOR: u128 = 1_000_000_000_000; // 10^12
 
@@ -38,13 +51,35 @@ fn floor_div(a: u128, b: u128) -> Result<u128> {
     a.checked_div(b).ok_or(BondingCurveError::CalculationOverflow.into())
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Copy)]
+pub enum CreatorBuyStatus {
+    Pending = 0,
+    Claimed = 1,
+    Skipped = 2,
+}
+
+impl CreatorBuyStatus {
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+    
+    pub fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0 => Some(Self::Pending),
+            1 => Some(Self::Claimed),
+            2 => Some(Self::Skipped),
+            _ => None,
+        }
+    }
+}
 
 #[program]
 pub mod bonding_curve {
     use super::*;
 
     pub fn initialize_curve(ctx: Context<InitializeCurve>) -> Result<()> {
-        msg!("Initializing Bonding Curve (Linear: 0.00005 -> 1 N$ over 40M tokens)...");
+        msg!("Initializing Bonding Curve...");
+        debug_msg!("Curve type: Linear 0.00005 -> 1 N$ over 40M tokens");
         let curve = &mut ctx.accounts.bonding_curve;
         let bonding_token_account = &ctx.accounts.bonding_curve_token_account;
         let mint = &ctx.accounts.mint;
@@ -60,6 +95,12 @@ pub mod bonding_curve {
         curve.bump = ctx.bumps.bonding_curve;
         curve.token_decimals = mint.decimals;
         curve.n_dollar_decimals = n_dollar_mint.decimals;
+        
+        // --- Creator buy fields ---
+        curve.creator = ctx.accounts.authority.key(); // Creator = the one who called initialize_curve
+        curve.creator_buy_status = CreatorBuyStatus::Pending.as_u8();
+        curve.creator_locked_until = 0;
+        curve.creator_bought = 0;
 
         // --- Calculate and Verify Initial Supply for the Curve ---
         let token_decimal_factor_u64 = 10u64.pow(curve.token_decimals as u32);
@@ -68,8 +109,8 @@ pub mod bonding_curve {
             .ok_or(BondingCurveError::CalculationOverflow)?;
 
         let current_balance_on_curve = bonding_token_account.amount;
-        msg!("Expected initial supply (lamports based on 40M tokens): {}", supply_target_lamports);
-        msg!("Actual balance in bonding token account: {}", current_balance_on_curve);
+        debug_msg!("Expected initial supply (lamports based on 40M tokens): {}", supply_target_lamports);
+        debug_msg!("Actual balance in bonding token account: {}", current_balance_on_curve);
 
         require!(
             current_balance_on_curve == supply_target_lamports,
@@ -91,6 +132,7 @@ pub mod bonding_curve {
         let initial_supply_u128: u128 = curve.initial_bonding_supply.into();
 
         // Calculate c_scaled (start price * PRECISION)
+        // By default, we use START_PRICE_NUMERATOR/DENOMINATOR (0.00005)
         let start_price_scaled = START_PRICE_NUMERATOR
             .checked_mul(PRECISION_FACTOR)
             .ok_or(BondingCurveError::CalculationOverflow)?
@@ -114,19 +156,46 @@ pub mod bonding_curve {
         curve.slope_denominator = initial_supply_u128; // Y_max (40M tokens in lamports)
         curve.intercept_scaled = start_price_scaled;  // P_start * PRECISION
 
-        msg!("Bonding curve initialized (Price based on SOLD tokens, target 40M):");
-        msg!("  Initial Supply (lamports, Y_max): {}", curve.initial_bonding_supply);
-        msg!("  Start Price (scaled, c): {}", curve.intercept_scaled); // P(0)
-        msg!("  Target Price (scaled, P(Y_max)): {}", target_price_scaled);
-        msg!("  Slope Numerator (m * Y_max, scaled): {}", curve.slope_numerator);
-        msg!("  Slope Denominator (Y_max, lamports): {}", curve.slope_denominator);
+        msg!("Bonding curve initialized successfully");
+        debug_msg!("Price curve details (based on SOLD tokens, target 40M):");
+        debug_msg!("  Initial Supply (lamports, Y_max): {}", curve.initial_bonding_supply);
+        debug_msg!("  Start Price (scaled, c): {}", curve.intercept_scaled); // P(0)
+        debug_msg!("  Target Price (scaled, P(Y_max)): {}", target_price_scaled);
+        debug_msg!("  Slope Numerator (m * Y_max, scaled): {}", curve.slope_numerator);
+        debug_msg!("  Slope Denominator (Y_max, lamports): {}", curve.slope_denominator);
+
+        // Initialize safety features
+        curve.paused = false;
 
         Ok(())
     }
 
-    pub fn buy(ctx: Context<BuySell>, amount_to_buy: u64) -> Result<()> {
-        msg!("Executing Buy for {} lamports", amount_to_buy);
-        let curve = &ctx.accounts.bonding_curve;
+    pub fn pause_curve(ctx: Context<PauseCurve>, pause_state: bool) -> Result<()> {
+        let curve = &mut ctx.accounts.bonding_curve;
+        require!(ctx.accounts.authority.key() == curve.authority, BondingCurveError::Unauthorized);
+        curve.paused = pause_state;
+        msg!("Curve {} {}", if pause_state { "paused" } else { "unpaused" }, curve.mint);
+        Ok(())
+    }
+
+    pub fn buy(ctx: Context<BuySell>, amount_to_buy: u64, max_total_cost: u64) -> Result<()> {
+        let curve = &mut ctx.accounts.bonding_curve;
+        // Safety check
+        require!(!curve.paused, BondingCurveError::CurvePaused);
+
+        // --- Creator buy logic ---
+        if let Some(status) = CreatorBuyStatus::from_u8(curve.creator_buy_status) {
+            if status == CreatorBuyStatus::Pending {
+                // Only the creator can buy in the Pending status
+                require!(ctx.accounts.user_authority.key() == curve.creator, BondingCurveError::NotCreator);
+                // But only through the special creator_buy_tokens instruction, not through buy
+                return Err(BondingCurveError::UseCreatorBuyInstruction.into());
+            }
+        }
+        // If status is not Pending (Claimed/Skipped), then the price should already be 0.0002 for all
+        // --- Normal logic ---
+        msg!("Executing Buy");
+        debug_msg!("Buy amount: {} lamports", amount_to_buy);
         require!(curve.is_initialized, BondingCurveError::NotInitialized);
         require!(amount_to_buy > 0, BondingCurveError::ZeroAmount);
 
@@ -156,9 +225,9 @@ pub mod bonding_curve {
         let y1 = initial_supply.checked_sub(final_supply)   // initial - x0 = y0 + dx
                  .ok_or(BondingCurveError::CalculationOverflow)?;
 
-        msg!("  Tokens Sold Before (y0): {}", y0);
-        msg!("  Tokens Sold After (y1): {}", y1);
-        msg!("  Amount Bought (dx): {}", dx);
+        debug_msg!("  Tokens Sold Before (y0): {}", y0);
+        debug_msg!("  Tokens Sold After (y1): {}", y1);
+        debug_msg!("  Amount Bought (dx): {}", dx);
 
         // Calculate cost using integral of P(y) = m*y + c
         // Cost = Integral[P(y) dy] from y0 to y1
@@ -174,54 +243,61 @@ pub mod bonding_curve {
         // term1_lamports = ceil( [m/2 * dx * (y1 + y0)] / PRECISION_FACTOR )
         // Rearranged to avoid overflow:
         // term1_lamports = ceil( [ ceil(m_num * dx / (m_den * 2)) * (y1 + y0) ] / PRECISION_FACTOR )
-        msg!("Calculating term 1 (slope component)...");
+        debug_msg!("Calculating term 1 (slope component)...");
 
         let term1_intermediate_num = m_num.checked_mul(dx).ok_or(BondingCurveError::CalculationOverflow)?;
-        msg!("  m_num * dx = {}", term1_intermediate_num);
+        debug_msg!("  m_num * dx = {}", term1_intermediate_num);
         let term1_intermediate_den = m_den.checked_mul(2).ok_or(BondingCurveError::CalculationOverflow)?;
-        msg!("  m_den * 2 = {}", term1_intermediate_den);
+        debug_msg!("  m_den * 2 = {}", term1_intermediate_den);
 
         // Calculate ratio scaled by PRECISION, using ceiling for buy
         let intermediate_ratio_scaled = ceil_div(term1_intermediate_num, term1_intermediate_den)?;
-        msg!("  Intermediate Ratio (scaled, ceiling) = {}", intermediate_ratio_scaled);
+        debug_msg!("  Intermediate Ratio (scaled, ceiling) = {}", intermediate_ratio_scaled);
 
         // Convert y0 and y1 to u128 BEFORE adding
         let y0_u128: u128 = y0.into();
         let y1_u128: u128 = y1.into();
         let sum_y = y1_u128.checked_add(y0_u128).ok_or(BondingCurveError::CalculationOverflow)?;
-        msg!("  y1 + y0 = {}", sum_y);
+        debug_msg!("  y1 + y0 = {}", sum_y);
 
         // Multiply ratio by sum_y (now both are u128)
         let term1_final_num = intermediate_ratio_scaled.checked_mul(sum_y).ok_or(BondingCurveError::CalculationOverflow)?;
-        msg!("  Numerator Final (Intermediate Ratio * Sum y) = {}", term1_final_num);
+        debug_msg!("  Numerator Final (Intermediate Ratio * Sum y) = {}", term1_final_num);
 
         // Divide by PRECISION, using ceiling for buy
         let term1_lamports = ceil_div(term1_final_num, PRECISION_FACTOR)?;
-        msg!("  Term1 Lamports (Ceiling) = {}", term1_lamports);
+        debug_msg!("  Term1 Lamports (Ceiling) = {}", term1_lamports);
 
         // --- Calculate Term 2 (from intercept c) ---
         // term2_lamports = ceil( [c_scaled * dx] / PRECISION_FACTOR )
-         msg!("Calculating term 2 (intercept component)...");
+         debug_msg!("Calculating term 2 (intercept component)...");
         let term2_num = c_scaled.checked_mul(dx).ok_or(BondingCurveError::CalculationOverflow)?;
-         msg!("  Numerator2 (c_scaled * dx) = {}", term2_num);
+         debug_msg!("  Numerator2 (c_scaled * dx) = {}", term2_num);
         // Divide by PRECISION, using ceiling for buy
         let term2_lamports = ceil_div(term2_num, PRECISION_FACTOR)?;
-        msg!("  Term2 Lamports (Ceiling) = {}", term2_lamports);
+        debug_msg!("  Term2 Lamports (Ceiling) = {}", term2_lamports);
 
         // --- Calculate Total Cost ---
         let total_cost_lamports_u128 = term1_lamports
             .checked_add(term2_lamports)
             .ok_or(BondingCurveError::CalculationOverflow)?;
-        msg!("Total Cost (u128) = {}", total_cost_lamports_u128);
+        debug_msg!("Total Cost (u128) = {}", total_cost_lamports_u128);
 
         // --- Convert to u64 ---
         let total_cost_lamports: u64 = total_cost_lamports_u128
             .try_into()
             .map_err(|_| {
-                 msg!("!!! Overflow: Final cost {} exceeds u64::MAX", total_cost_lamports_u128);
+                 debug_msg!("!!! Overflow: Final cost {} exceeds u64::MAX", total_cost_lamports_u128);
                  BondingCurveError::CalculationOverflow
              })?;
-        msg!("Final Cost (u64) = {}", total_cost_lamports);
+        debug_msg!("Final Cost (u64) = {}", total_cost_lamports);
+        
+        // Slippage protection
+        require!(
+            total_cost_lamports <= max_total_cost,
+            BondingCurveError::SlippageExceeded
+        );
+        
         // Check user N-Dollar balance
         require!(
             ctx.accounts.user_n_dollar_account.amount >= total_cost_lamports,
@@ -265,9 +341,12 @@ pub mod bonding_curve {
         Ok(())
     }
 
-    pub fn sell(ctx: Context<BuySell>, amount_to_sell: u64) -> Result<()> {
-        msg!("Executing Sell for {} lamports", amount_to_sell);
+    pub fn sell(ctx: Context<BuySell>, amount_to_sell: u64, min_total_return: u64) -> Result<()> {
         let curve = &ctx.accounts.bonding_curve;
+        // Safety check
+        require!(!curve.paused, BondingCurveError::CurvePaused);
+        
+        msg!("Executing Sell for {} lamports", amount_to_sell);
         require!(curve.is_initialized, BondingCurveError::NotInitialized);
         require!(amount_to_sell > 0, BondingCurveError::ZeroAmount);
 
@@ -367,6 +446,12 @@ pub mod bonding_curve {
              })?;
         msg!("Final Proceeds (u64) = {}", total_proceeds_lamports);
 
+        // Slippage protection
+        require!(
+            total_proceeds_lamports >= min_total_return,
+            BondingCurveError::SlippageExceeded
+        );
+
         // Check treasury N-Dollar balance
         require!(
             ctx.accounts.n_dollar_treasury.amount >= total_proceeds_lamports,
@@ -408,6 +493,138 @@ pub mod bonding_curve {
         )?;
 
         msg!("Sell successful.");
+        Ok(())
+    }
+
+    pub fn creator_buy_tokens(ctx: Context<CreatorBuy>,) -> Result<()> {
+        let curve = &mut ctx.accounts.bonding_curve;
+        // Safety check
+        require!(!curve.paused, BondingCurveError::CurvePaused);
+        
+        // Use from_u8 to create enum from number
+        let status = CreatorBuyStatus::from_u8(curve.creator_buy_status)
+            .ok_or(BondingCurveError::CreatorBuyNotAvailable)?;
+        require!(status == CreatorBuyStatus::Pending, BondingCurveError::CreatorBuyNotAvailable);
+        require!(ctx.accounts.creator.key() == curve.creator, BondingCurveError::NotCreator);
+        require!(curve.creator_bought == 0, BondingCurveError::CreatorAlreadyBought);
+        require!(ctx.accounts.bonding_curve_token_account.amount >= CREATOR_BUY_AMOUNT, BondingCurveError::InsufficientLiquidity);
+        require!(ctx.accounts.creator_n_dollar_account.amount >= CREATOR_BUY_TOTAL_NDOLLAR, BondingCurveError::InsufficientFunds);
+
+        // Check that the configured constants are consistent with each other
+        require!(
+            CREATOR_BUY_TOTAL_NDOLLAR == CREATOR_BUY_AMOUNT / 1_000_000_000 * CREATOR_BUY_PRICE,
+            BondingCurveError::IncorrectCreatorPayment
+        );
+
+        // Transfer N-Dollar from creator to treasury
+        let cpi_accounts_ndollar = Transfer {
+            from: ctx.accounts.creator_n_dollar_account.to_account_info(),
+            to: ctx.accounts.n_dollar_treasury.to_account_info(),
+            authority: ctx.accounts.creator.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts_ndollar),
+            CREATOR_BUY_TOTAL_NDOLLAR
+        )?;
+
+        // Save params in local variables to avoid borrow issues
+        let bump = curve.bump;
+        let mint_key = curve.mint.key();
+        
+        // Update state
+        curve.creator_bought = CREATOR_BUY_AMOUNT;
+        curve.creator_buy_status = CreatorBuyStatus::Claimed.as_u8(); // Use as_u8()
+        let now = Clock::get()?.unix_timestamp;
+        curve.creator_locked_until = now + CREATOR_LOCK_PERIOD;
+        
+        // Update price to 0.0002 (4 times higher) after creator buy
+        curve.intercept_scaled = POST_CREATOR_BUY_PRICE_NUMERATOR
+            .checked_mul(PRECISION_FACTOR)
+            .ok_or(BondingCurveError::CalculationOverflow)?
+            .checked_div(POST_CREATOR_BUY_PRICE_DENOMINATOR)
+            .ok_or(BondingCurveError::CalculationOverflow)?;
+
+        // Transfer tokens from curve to escrow PDA
+        let bonding_seeds = [b"bonding_curve".as_ref(), mint_key.as_ref(), &[bump]];
+        let signer_seeds = &[&bonding_seeds[..]];
+        
+        let cpi_accounts_token = Transfer {
+            from: ctx.accounts.bonding_curve_token_account.to_account_info(),
+            to: ctx.accounts.creator_escrow_token_account.to_account_info(),
+            authority: ctx.accounts.bonding_curve.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts_token, signer_seeds),
+            CREATOR_BUY_AMOUNT
+        )?;
+
+        Ok(())
+    }
+
+    pub fn skip_creator_buy(ctx: Context<SkipCreatorBuy>) -> Result<()> {
+        let curve = &mut ctx.accounts.bonding_curve;
+        // Safety check
+        require!(!curve.paused, BondingCurveError::CurvePaused);
+        
+        let status = CreatorBuyStatus::from_u8(curve.creator_buy_status)
+            .ok_or(BondingCurveError::CreatorBuyNotAvailable)?;
+        require!(status == CreatorBuyStatus::Pending, BondingCurveError::CreatorBuyNotAvailable);
+        require!(ctx.accounts.creator.key() == curve.creator, BondingCurveError::NotCreator);
+        curve.creator_buy_status = CreatorBuyStatus::Skipped.as_u8(); // Use as_u8()
+        
+        // Update price to 0.0002 (4 times higher) after creator buy
+        curve.intercept_scaled = POST_CREATOR_BUY_PRICE_NUMERATOR
+            .checked_mul(PRECISION_FACTOR)
+            .ok_or(BondingCurveError::CalculationOverflow)?
+            .checked_div(POST_CREATOR_BUY_PRICE_DENOMINATOR)
+            .ok_or(BondingCurveError::CalculationOverflow)?;
+            
+        Ok(())
+    }
+
+    pub fn unlock_creator_tokens(ctx: Context<UnlockCreatorTokens>) -> Result<()> {
+        let curve = &ctx.accounts.bonding_curve;
+        // Safety check
+        require!(!curve.paused, BondingCurveError::CurvePaused);
+        
+        let status = CreatorBuyStatus::from_u8(curve.creator_buy_status)
+            .ok_or(BondingCurveError::CreatorBuyNotAvailable)?;
+        require!(status == CreatorBuyStatus::Claimed, BondingCurveError::CreatorBuyNotAvailable);
+        
+        // Check only if the caller is not the creator
+        if ctx.accounts.recipient.key() != curve.creator {
+            let now = Clock::get()?.unix_timestamp;
+            require!(now >= curve.creator_locked_until, BondingCurveError::TokensStillLocked);
+        } else {
+            // If creator is calling, still check the lock time
+            let now = Clock::get()?.unix_timestamp;
+            require!(now >= curve.creator_locked_until, BondingCurveError::TokensStillLocked);
+        }
+        
+        require!(ctx.accounts.creator_escrow_token_account.amount >= CREATOR_BUY_AMOUNT, BondingCurveError::InsufficientLiquidity);
+
+        // Transfer tokens from escrow to recipient
+        let escrow_bump = ctx.bumps.creator_escrow;
+        let mint_key_val = ctx.accounts.mint.key();
+        let creator_key_val = curve.creator;
+
+        let lock_seeds = [
+            b"creator_lock".as_ref(), 
+            mint_key_val.as_ref(),
+            creator_key_val.as_ref(),
+            &[escrow_bump]
+        ];
+        let signer_seeds = &[&lock_seeds[..]];
+        
+        let cpi_accounts_token = Transfer {
+            from: ctx.accounts.creator_escrow_token_account.to_account_info(),
+            to: ctx.accounts.recipient_token_account.to_account_info(),
+            authority: ctx.accounts.creator_escrow.to_account_info(),
+        };
+        token::transfer(
+            CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts_token, signer_seeds),
+            CREATOR_BUY_AMOUNT
+        )?;
         Ok(())
     }
 }
@@ -507,6 +724,126 @@ pub struct BondingCurve {
     pub n_dollar_decimals: u8,
     pub is_initialized: bool,
     pub bump: u8,
+    // --- Creator buy fields ---
+    pub creator: Pubkey,
+    pub creator_buy_status: u8, // CreatorBuyStatus as u8 (0 = Pending, 1 = Claimed, 2 = Skipped)
+    pub creator_locked_until: i64, // Unix timestamp when the lock period ends
+    pub creator_bought: u64, // Number of tokens bought by the creator
+    // --- Safety features ---
+    pub paused: bool,
+}
+
+// --- Creator buy constants ---
+const CREATOR_BUY_AMOUNT: u64 = 10_000_000 * 1_000_000_000; // 10M tokens, 9 decimals
+const CREATOR_BUY_PRICE: u64 = 50_000; // 0.00005 * 1_000_000_000 = 50_000 lamports per token
+const CREATOR_BUY_TOTAL_NDOLLAR: u64 = 500_000_000_000; // 10_000_000 * 50_000 = 500_000_000_000 lamports (500_000 N-Dollar at 9 decimals)
+const CREATOR_LOCK_PERIOD: i64 = 365 * 24 * 60 * 60; // 1 year in seconds
+// const CREATOR_LOCK_PERIOD: i64 = 10; // 10 seconds for test
+const POST_CREATOR_BUY_PRICE_NUMERATOR: u128 = 2;
+const POST_CREATOR_BUY_PRICE_DENOMINATOR: u128 = 10_000; // 0.0002
+
+// --- Contexts ---
+#[derive(Accounts)]
+pub struct CreatorBuy<'info> {
+    #[account(
+        mut, 
+        has_one = mint,
+        constraint = bonding_curve.creator == creator.key() @ BondingCurveError::NotCreator,
+        constraint = bonding_curve.creator_buy_status == CreatorBuyStatus::Pending.as_u8() @ BondingCurveError::CreatorBuyNotAvailable
+    )]
+    pub bonding_curve: Account<'info, BondingCurve>,
+    pub mint: Account<'info, Mint>,
+    #[account(
+        mut,
+        constraint = bonding_curve_token_account.owner == bonding_curve.key() @ BondingCurveError::InvalidTokenAccountOwner,
+        constraint = bonding_curve_token_account.mint == mint.key() @ BondingCurveError::InvalidTokenAccount,
+    )]
+    pub bonding_curve_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = n_dollar_treasury.owner == bonding_curve.key() @ BondingCurveError::InvalidTokenAccountOwner,
+    )]
+    pub n_dollar_treasury: Account<'info, TokenAccount>,
+    
+    /// CHECK: Creator is the signer of the transaction and its key is checked against bonding_curve.creator.
+    #[account(mut, signer)]
+    pub creator: AccountInfo<'info>,
+    
+    #[account(
+        mut,
+        constraint = creator_n_dollar_account.owner == creator.key() @ BondingCurveError::InvalidTokenAccountOwner,
+        constraint = creator_n_dollar_account.amount >= CREATOR_BUY_TOTAL_NDOLLAR @ BondingCurveError::InsufficientFunds,
+    )]
+    pub creator_n_dollar_account: Account<'info, TokenAccount>,
+    
+    /// CHECK: creator_escrow is a PDA derived with known seeds (mint, creator key), bump is checked by Anchor.
+    #[account(
+        mut,
+        seeds = [b"creator_lock", mint.key().as_ref(), creator.key().as_ref()],
+        bump
+    )]
+    pub creator_escrow: AccountInfo<'info>,
+    
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = creator_escrow,
+    )]
+    pub creator_escrow_token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct SkipCreatorBuy<'info> {
+    #[account(mut, has_one = mint)]
+    pub bonding_curve: Account<'info, BondingCurve>,
+    pub mint: Account<'info, Mint>,
+    
+    /// CHECK: Creator is the signer of the transaction and its key is checked against bonding_curve.creator.
+    #[account(signer)]
+    pub creator: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct UnlockCreatorTokens<'info> {
+    pub bonding_curve: Account<'info, BondingCurve>,
+    pub mint: Account<'info, Mint>,
+    
+    /// CHECK: Recipient account. Its usage is safe as it's only used as the destination for token transfer.
+    /// The authority to transfer to this account is implicitly the signer of the transaction.
+    #[account(mut, signer)]
+    pub recipient: AccountInfo<'info>,
+    
+    /// CHECK: creator_escrow is a PDA derived with known seeds (mint, bonding_curve.creator key), bump is checked by Anchor.
+    #[account(
+        seeds = [b"creator_lock", mint.key().as_ref(), bonding_curve.creator.as_ref()],
+        bump
+    )]
+    pub creator_escrow: AccountInfo<'info>,
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = creator_escrow,
+    )]
+    pub creator_escrow_token_account: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        constraint = recipient_token_account.mint == mint.key() @ BondingCurveError::InvalidTokenAccount,
+        constraint = recipient_token_account.owner == recipient.key() @ BondingCurveError::InvalidTokenAccountOwner,
+    )]
+    pub recipient_token_account: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+// --- New Context ---
+#[derive(Accounts)]
+pub struct PauseCurve<'info> {
+    #[account(mut)]
+    pub bonding_curve: Account<'info, BondingCurve>,
+    
+    /// CHECK: Authority is the signer of the transaction and its key is checked against bonding_curve.authority.
+    #[account(signer)]
+    pub authority: AccountInfo<'info>,
 }
 
 // --- Errors (DO NOT TOUCH) ---
@@ -536,4 +873,26 @@ pub enum BondingCurveError {
     BondingAccountEmpty,
     #[msg("Cannot sell more tokens than have been bought from the curve.")]
     CannotSellMoreThanSold,
+    // --- Creator buy errors ---
+    #[msg("Creator buy not available.")]
+    CreatorBuyNotAvailable,
+    #[msg("Only creator can call this instruction.")]
+    NotCreator,
+    #[msg("Creator already bought tokens.")]
+    CreatorAlreadyBought,
+    #[msg("Tokens are still locked.")]
+    TokensStillLocked,
+    #[msg("Creator buy must be for exact amount.")]
+    CreatorBuyMustBeExact,
+    #[msg("Use creator_buy_tokens instruction instead.")]
+    UseCreatorBuyInstruction,
+    // --- Safety errors ---
+    #[msg("This operation is not permitted while the curve is paused.")]
+    CurvePaused,
+    #[msg("Only the curve authority can perform this operation.")]
+    Unauthorized,
+    #[msg("Slippage limit exceeded.")]
+    SlippageExceeded,
+    #[msg("Creator buy payment amount is incorrect.")]
+    IncorrectCreatorPayment,
 }

@@ -413,4 +413,109 @@
 //       "SOL"
 //     );
 //   });
+
+//   it("Mints additional N-Dollar tokens", async () => {
+//     // Находим PDA для пула
+//     const [poolPda] = PublicKey.findProgramAddressSync(
+//       [Buffer.from("pool"), mint.publicKey.toBuffer()],
+//       liquidityPoolProgram.programId
+//     );
+
+//     // Получаем адрес vault'а для N-Dollar токенов пула
+//     // Этот ATA должен был быть создан во время initializeLiquidityPool
+//     const poolNDollarVault = await anchor.utils.token.associatedAddress({
+//       mint: mint.publicKey,
+//       owner: poolPda,
+//     });
+
+//     const initialBalancePoolVault =
+//       await provider.connection.getTokenAccountBalance(poolNDollarVault);
+//     const amountToMint = new BN(5000 * 10 ** 9); // Минтим 5000 токенов в пул
+
+//     const tx = await program.methods
+//       .mintAdditionalTokens(amountToMint)
+//       .accounts({
+//         mint: mint.publicKey,
+//         mintAuthority: wallet.publicKey, // authority - это кошелек пользователя, который создал минт
+//         recipientTokenAccount: poolNDollarVault, // Направляем токены в хранилище пула
+//         tokenProgram: TOKEN_PROGRAM_ID,
+//       })
+//       .rpc();
+
+//     console.log("Mint additional tokens to pool vault tx:", tx);
+
+//     const finalBalancePoolVault =
+//       await provider.connection.getTokenAccountBalance(poolNDollarVault);
+//     console.log(
+//       "Pool N-Dollar vault balance after minting:",
+//       finalBalancePoolVault.value.uiAmount
+//     );
+
+//     const expectedBalancePoolVault = new BN(
+//       initialBalancePoolVault.value.amount
+//     ).add(amountToMint);
+//     assert.equal(
+//       finalBalancePoolVault.value.amount,
+//       expectedBalancePoolVault.toString(),
+//       `Expected ${new BN(expectedBalancePoolVault)
+//         .div(new BN(10 ** 9))
+//         .toString()} tokens in pool vault, but got ${
+//         finalBalancePoolVault.value.uiAmount
+//       }`
+//     );
+//   });
+
+//   it("Burns user N-Dollar tokens", async () => {
+//     // Создаем или получаем ATA для пользователя
+//     const userNDollarAccount = await getOrCreateATA(
+//       mint.publicKey,
+//       wallet.publicKey,
+//       wallet
+//     );
+
+//     const initialBalance = await provider.connection.getTokenAccountBalance(
+//       userNDollarAccount
+//     );
+//     const amountToBurn = new BN(initialBalance.value.amount).divn(2); // Сжигаем половину баланса
+
+//     if (new BN(initialBalance.value.amount).isZero()) {
+//       console.log("User has no tokens to burn. Skipping burn test.");
+//       return;
+//     }
+//     assert(
+//       new BN(initialBalance.value.amount).gt(new BN(0)),
+//       "User has no tokens to burn."
+//     );
+
+//     const tx = await program.methods
+//       .burnUserTokens(amountToBurn)
+//       .accounts({
+//         mint: mint.publicKey,
+//         userTokenAccount: userNDollarAccount,
+//         owner: wallet.publicKey, // owner - это кошелек пользователя, который владеет токенами
+//         tokenProgram: TOKEN_PROGRAM_ID,
+//       })
+//       .rpc();
+
+//     console.log("Burn user tokens tx:", tx);
+
+//     const finalBalance = await provider.connection.getTokenAccountBalance(
+//       userNDollarAccount
+//     );
+//     console.log(
+//       "User N-Dollar balance after burning:",
+//       finalBalance.value.uiAmount
+//     );
+
+//     const expectedBalance = new BN(initialBalance.value.amount).sub(
+//       amountToBurn
+//     );
+//     assert.equal(
+//       finalBalance.value.amount,
+//       expectedBalance.toString(),
+//       `Expected ${expectedBalance.toNumber() / 10 ** 9} tokens, but got ${
+//         finalBalance.value.uiAmount
+//       }`
+//     );
+//   });
 // });

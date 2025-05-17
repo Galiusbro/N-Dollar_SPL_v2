@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token, MintTo};
+use anchor_spl::token::{Mint, Token, MintTo, TokenAccount};
 use anchor_spl::associated_token::AssociatedToken;
 use mpl_token_metadata::{
     instructions::CreateMetadataAccountV3,
@@ -61,7 +61,7 @@ pub mod n_dollar {
             ],
         )?;
 
-        msg!("Token created successfully");
+        msg!("N-Dollar Token created successfully");
         Ok(())
     }
 
@@ -109,6 +109,40 @@ pub mod n_dollar {
         msg!("Liquidity pool initialized with 108,000,000 N-Dollar tokens");
         Ok(())
     }
+
+    pub fn mint_additional_tokens(ctx: Context<MintAdditionalTokens>, amount: u64) -> Result<()> {
+        require!(amount > 0, NTokenErrorCode::AmountMustBeGreaterThanZero);
+
+        let cpi_accounts = MintTo {
+            mint: ctx.accounts.mint.to_account_info(),
+            to: ctx.accounts.recipient_token_account.to_account_info(),
+            authority: ctx.accounts.mint_authority.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        
+        anchor_spl::token::mint_to(cpi_ctx, amount)?;
+        
+        msg!("Minted {} additional N-Dollar tokens to {}", amount, ctx.accounts.recipient_token_account.key());
+        Ok(())
+    }
+
+    pub fn burn_user_tokens(ctx: Context<BurnUserTokens>, amount: u64) -> Result<()> {
+        require!(amount > 0, NTokenErrorCode::AmountMustBeGreaterThanZero);
+        
+        let cpi_accounts = anchor_spl::token::Burn {
+            mint: ctx.accounts.mint.to_account_info(),
+            from: ctx.accounts.user_token_account.to_account_info(),
+            authority: ctx.accounts.owner.to_account_info(),
+        };
+        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+
+        anchor_spl::token::burn(cpi_ctx, amount)?;
+
+        msg!("Burned {} N-Dollar tokens from {}", amount, ctx.accounts.user_token_account.key());
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -136,6 +170,7 @@ pub struct CreateToken<'info> {
     #[account(address = METADATA_PROGRAM_ID)]
     pub token_metadata_program: AccountInfo<'info>,
 }
+
 #[derive(Accounts)]
 pub struct InitializeLiquidityPool<'info> {
     #[account(mut)]
@@ -163,5 +198,59 @@ pub struct InitializeLiquidityPool<'info> {
     
     /// CHECK: This is the liquidity pool program
     pub liquidity_pool_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct MintAdditionalTokens<'info> {
+    #[account(
+        mut,
+        // The N-Dollar mint authority was set during create_token
+        // constraint = mint.mint_authority == Some(mint_authority.key()) @ NTokenErrorCode::InvalidMintAuthority 
+        // constraint above is implicitly checked by token_program when mint_authority signs
+    )]
+    pub mint: Account<'info, Mint>,
+    
+    /// CHECK: This is the authority of the N-Dollar mint.
+    /// Must be the signer of this transaction.
+    #[account(mut)] // Mint authority might need to pay for transaction fees
+    pub mint_authority: Signer<'info>,
+    
+    #[account(
+        mut,
+        token::mint = mint // This constraint requires Account<'info, TokenAccount>
+    )]
+    pub recipient_token_account: Account<'info, TokenAccount>, // Changed back from AccountInfo
+    
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct BurnUserTokens<'info> {
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
+    
+    #[account(
+        mut,
+        token::mint = mint, // This constraint requires Account<'info, TokenAccount>
+        // constraint = user_token_account.owner == owner.key() @ NTokenErrorCode::InvalidOwner
+        // constraint above is implicitly checked by token_program when owner signs
+    )]
+    pub user_token_account: Account<'info, TokenAccount>, // Changed back from AccountInfo
+    
+    /// CHECK: The owner of the user_token_account.
+    /// Must be the signer of this transaction.
+    pub owner: Signer<'info>,
+    
+    pub token_program: Program<'info, Token>,
+}
+
+#[error_code]
+pub enum NTokenErrorCode {
+    #[msg("Amount must be greater than zero.")]
+    AmountMustBeGreaterThanZero,
+    #[msg("Invalid mint authority.")]
+    InvalidMintAuthority,
+    #[msg("Invalid owner.")]
+    InvalidOwner,
 }
 

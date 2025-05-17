@@ -377,7 +377,6 @@ describe("Token Creation and Distribution Test", () => {
       "User N-Dollar balance after swap:",
       userNDollarBalanceAfter.toString()
     );
-    console.log("User received N-Dollar:", ndollarReceived.toString());
     assert(ndollarReceived > 0, "Should have received some N-Dollars");
 
     const finalPoolSolBalance = await provider.connection.getBalance(
@@ -404,47 +403,9 @@ describe("Token Creation and Distribution Test", () => {
     console.log("\n6a: Creating user token...");
     console.log("User token mint pubkey:", userTokenMint.toString());
 
-    const nDollarAmountForRent = new BN(50_000_000); // Примерное значение
-
-    // --- Проверка и пополнение баланса N-Dollar ---
-    const userNDollarBalanceBefore = await getTokenBalance(
-      provider,
-      userNDollarAccount
-    );
-    console.log(
-      `User N-Dollar balance before creation: ${userNDollarBalanceBefore.toString()}`
-    );
-    if (userNDollarBalanceBefore < nDollarAmountForRent.toNumber()) {
-      console.log("Insufficient N-Dollar balance, attempting to get more...");
-      const solToSwap = new BN(2 * SOL_DECIMALS);
-
-      const swapTx = await liquidityPoolProgram.methods
-        .swapSolToNdollar(solToSwap)
-        .accounts({
-          pool: poolPda,
-          ndollarMint: nDollarMint,
-          ndollarVault: poolNDollarAccount,
-          solVault: solVaultPda,
-          user: wallet.publicKey,
-          userNdollar: userNDollarAccount,
-          systemProgram: SystemProgram.programId,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc({ commitment: "confirmed" });
-
-      await provider.connection.confirmTransaction(swapTx, "confirmed");
-      const newBalance = await getTokenBalance(provider, userNDollarAccount);
-      console.log(`New N-Dollar balance after swap: ${newBalance.toString()}`);
-      if (newBalance < nDollarAmountForRent.toNumber()) {
-        throw new Error(`Still insufficient N-Dollar balance.`);
-      }
-    }
-    assert(
-      userNDollarBalanceBefore >= nDollarAmountForRent.toNumber(),
-      `Insufficient N-Dollar balance.`
-    );
-
-    // --- Находим PDA и ATA, нужные для СОЗДАНИЯ ---
+    // --- ЛОГИРОВАНИЕ ВСЕХ КЛЮЧЕВЫХ ПЕРЕМЕННЫХ И PDA ---
+    console.log("userTokenMint", userTokenMint?.toBase58?.() ?? userTokenMint);
+    // PDA для metadata
     const [userTokenMetadataPda] = PublicKey.findProgramAddressSync(
       [
         Buffer.from("metadata"),
@@ -453,22 +414,27 @@ describe("Token Creation and Distribution Test", () => {
       ],
       METADATA_PROGRAM_ID
     );
-    const [tokenInfoPda] = PublicKey.findProgramAddressSync(
+    console.log(
+      "userTokenMetadataPda",
+      userTokenMetadataPda?.toBase58?.() ?? userTokenMetadataPda
+    );
+    // PDA для token_info
+    const [tokenInfoPdaLocal] = PublicKey.findProgramAddressSync(
       [Buffer.from("token_info"), userTokenMint.toBuffer()],
       tokenCreatorProgram.programId
     );
-
+    tokenInfoPda = tokenInfoPdaLocal;
+    console.log("tokenInfoPda", tokenInfoPda?.toBase58?.() ?? tokenInfoPda);
+    // PDA для distributor
     [distributorAuthorityPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("distributor"), userTokenMint.toBuffer()],
-      tokenDistributorProgram.programId // ID дистрибьютора
+      tokenDistributorProgram.programId
     );
-    distributorTokenAccount = getAssociatedTokenAddressSync(
-      userTokenMint,
-      distributorAuthorityPda,
-      true
+    console.log(
+      "distributorAuthorityPda",
+      distributorAuthorityPda?.toBase58?.() ?? distributorAuthorityPda
     );
-
-    // --- Находим PDA и ATA, которые понадобятся ПОЗЖЕ (для 6b, 7, 8, 9) ---
+    // PDA для bonding_curve
     [bondingCurveAuthorityPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("bonding_curve"), userTokenMint.toBuffer()],
       bondingCurveProgram.programId
@@ -477,41 +443,54 @@ describe("Token Creation and Distribution Test", () => {
       [Buffer.from("bonding_curve"), userTokenMint.toBuffer()],
       bondingCurveProgram.programId
     );
-    [nDollarTreasury] = PublicKey.findProgramAddressSync(
-      [Buffer.from("n_dollar_treasury"), userTokenMint.toBuffer()],
-      bondingCurveProgram.programId
+    console.log(
+      "bondingCurveAuthorityPda",
+      bondingCurveAuthorityPda?.toBase58?.() ?? bondingCurveAuthorityPda
     );
-
+    console.log(
+      "bondingCurvePda",
+      bondingCurvePda?.toBase58?.() ?? bondingCurvePda
+    );
+    // PDA для n_dollar_treasury
+    nDollarTreasury = getAssociatedTokenAddressSync(
+      nDollarMint,
+      bondingCurvePda,
+      true // allowOwnerOffCurve = true для PDA
+    );
+    console.log(
+      "nDollarTreasury (ATA for nDollarMint & bondingCurvePda):",
+      nDollarTreasury?.toBase58?.() ?? nDollarTreasury
+    );
+    // ATA для пользователя
     userTokenAccount = getAssociatedTokenAddressSync(
       userTokenMint,
       wallet.publicKey
     );
+    console.log(
+      "userTokenAccount",
+      userTokenAccount?.toBase58?.() ?? userTokenAccount
+    );
+    // ATA для дистрибьютора
+    distributorTokenAccount = getAssociatedTokenAddressSync(
+      userTokenMint,
+      distributorAuthorityPda,
+      true
+    );
+    console.log(
+      "distributorTokenAccount",
+      distributorTokenAccount?.toBase58?.() ?? distributorTokenAccount
+    );
+    // ATA для bonding_curve
     bondingCurveTokenAccount = getAssociatedTokenAddressSync(
       userTokenMint,
       bondingCurveAuthorityPda,
       true
     );
-
-    // Логгирование адресов (как раньше)
-    console.log("User Token Mint:", userTokenMint.toBase58());
-    console.log("User Token Metadata PDA:", userTokenMetadataPda.toBase58());
-    console.log("Token Info PDA:", tokenInfoPda.toBase58());
     console.log(
-      "Distributor Authority PDA:",
-      distributorAuthorityPda.toBase58()
+      "bondingCurveTokenAccount",
+      bondingCurveTokenAccount?.toBase58?.() ?? bondingCurveTokenAccount
     );
-    console.log(
-      "Bonding Curve Authority PDA:",
-      bondingCurveAuthorityPda.toBase58()
-    );
-    console.log("Bonding Curve PDA:", bondingCurvePda.toBase58());
-    console.log("N-Dollar Treasury:", nDollarTreasury.toBase58());
-    console.log("User Token ATA:", userTokenAccount.toBase58());
-    console.log("Distributor Token ATA:", distributorTokenAccount.toBase58());
-    console.log(
-      "Bonding Curve Token ATA:",
-      bondingCurveTokenAccount.toBase58()
-    );
+    // --- КОНЕЦ ЛОГИРОВАНИЯ ---
 
     const name = "My New Token";
     const symbol = "NEWT";
@@ -521,32 +500,20 @@ describe("Token Creation and Distribution Test", () => {
     try {
       // ----- ВЫЗОВ tokenCreatorProgram -----
       const txSignature = await tokenCreatorProgram.methods
-        .createUserToken(name, symbol, uri, totalSupply, nDollarAmountForRent)
+        .createUserToken(name, symbol, uri, totalSupply)
         .accounts({
-          // Аккаунты создания токена (основные)
           mint: userTokenMint,
           metadata: userTokenMetadataPda,
           tokenInfo: tokenInfoPda,
           authority: wallet.publicKey,
-          solMint: WRAPPED_SOL_MINT,
-
-          // Аккаунты пула ликвидности (для свапа N$ -> SOL)
-          liquidityPool: poolPda,
-          poolNDollarAccount: poolNDollarAccount,
-          poolSolAccount: solVaultPda,
-          userNDollarAccount: userNDollarAccount,
-          nDollarMint: nDollarMint,
-          // Аккаунты, связанные с дистрибуцией (только для минта!)
+          rentPayer: wallet.publicKey,
           distributorAuthority: distributorAuthorityPda,
-          distributorTokenAccount: distributorTokenAccount, // Сюда минтятся все токены
-          // Системные программы
+          distributorTokenAccount: distributorTokenAccount,
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           rent: SYSVAR_RENT_PUBKEY,
           tokenMetadataProgram: METADATA_PROGRAM_ID,
-          // ID программ
-          liquidityPoolProgram: liquidityPoolProgram.programId,
         })
         .preInstructions([
           anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
@@ -559,6 +526,12 @@ describe("Token Creation and Distribution Test", () => {
       console.log("Create user token tx (6a):", txSignature);
       await provider.connection.confirmTransaction(txSignature, "confirmed");
 
+      // --- ПРОВЕРКА: Существует ли tokenInfoAccount? ---
+      const tokenInfoAccountInfo = await provider.connection.getAccountInfo(
+        tokenInfoPda
+      );
+      console.log("tokenInfoAccountInfo", tokenInfoAccountInfo);
+
       // --- ПРОВЕРКА РЕЗУЛЬТАТОВ СОЗДАНИЯ (6a) ---
       const userTokenMintInfo = await provider.connection.getAccountInfo(
         userTokenMint
@@ -570,6 +543,7 @@ describe("Token Creation and Distribution Test", () => {
       assert(metadataInfo, "User Token metadata should exist after 6a");
       const parsedMeta = parseMetadata(metadataInfo.data);
 
+      // @ts-ignore
       const tokenInfoAccount =
         await tokenCreatorProgram.account.tokenInfo.fetch(tokenInfoPda);
       assert(tokenInfoAccount, "Token Info account should exist after 6a");
@@ -584,11 +558,11 @@ describe("Token Creation and Distribution Test", () => {
         provider,
         bondingCurveTokenAccount
       ); // Ожидаем 0
-      const userNDollarBalanceAfter = await getTokenBalance(
-        provider,
-        userNDollarAccount
-      );
-      const spentNDollars = userNDollarBalanceBefore - userNDollarBalanceAfter;
+      // const userNDollarBalanceAfter = await getTokenBalance(
+      //   provider,
+      //   userNDollarAccount
+      // );
+      // const spentNDollars = userNDollarBalanceBefore - userNDollarBalanceAfter;
 
       // Логгирование для 6a
       console.log("\nToken Creation (6a) Results:");
@@ -609,7 +583,7 @@ describe("Token Creation and Distribution Test", () => {
         bondingCurveAtaBalance.toString(),
         "(Expected: 0)"
       );
-      console.log("Spent N-Dollars:", spentNDollars.toString());
+      // console.log("Spent N-Dollars:", spentNDollars.toString());
 
       // --- ОСНОВНЫЕ ПРОВЕРКИ для 6a ---
       assert.equal(
@@ -629,12 +603,12 @@ describe("Token Creation and Distribution Test", () => {
       );
 
       // Проверка потраченных N-Dollar (остается как была)
-      const maxAllowedSpent =
-        (BigInt(nDollarAmountForRent.toString()) * BigInt(110)) / BigInt(100);
-      assert(
-        spentNDollars > 0 && spentNDollars <= maxAllowedSpent,
-        `N-Dollar spent amount is outside allowed range`
-      );
+      // const maxAllowedSpent =
+      //   (BigInt(nDollarAmountForRent.toString()) * BigInt(110)) / BigInt(100);
+      // assert(
+      //   spentNDollars > 0 && spentNDollars <= maxAllowedSpent,
+      //   `N-Dollar spent amount is outside allowed range`
+      // );
 
       console.log(
         "Token creation (6a) successful. Tokens minted to distributor."
@@ -657,21 +631,56 @@ describe("Token Creation and Distribution Test", () => {
     assert(userTokenMint, "userTokenMint is not defined from step 6a");
     assert(distributorAuthorityPda, "distributorAuthorityPda not defined");
     assert(distributorTokenAccount, "distributorTokenAccount not defined");
-    assert(userTokenAccount, "userTokenAccount not defined");
+    assert(userTokenAccount, "userTokenAccount not defined"); // This is ATA for wallet.publicKey (user_authority)
     assert(bondingCurveAuthorityPda, "bondingCurveAuthorityPda not defined");
     assert(bondingCurveTokenAccount, "bondingCurveTokenAccount not defined");
 
+    // ---- Новые переменные для distributeTokens ----
+    const REFERRAL_PROGRAM_ID = new PublicKey(
+      "DMQh8Evpe3y4DzAWxx1rhLuGpnZGDvFSPLJvD9deQQfX"
+    );
+    const aiAgentAuthorityKp = Keypair.generate();
+    const aiAgentAuthority = aiAgentAuthorityKp.publicKey;
+    console.log("AI Agent Authority Pubkey:", aiAgentAuthority.toBase58());
+
+    const [referralTreasuryAuthorityPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("referral_treasury"), userTokenMint.toBuffer()],
+      REFERRAL_PROGRAM_ID // ID реферальной программы
+    );
+    const referralTreasuryTokenAccount = getAssociatedTokenAddressSync(
+      userTokenMint,
+      referralTreasuryAuthorityPda,
+      true // allowOwnerOffCurve = true для PDA
+    );
+    const aiAgentTokenAccount = getAssociatedTokenAddressSync(
+      userTokenMint,
+      aiAgentAuthority
+    );
+
+    console.log(
+      "Referral Treasury Authority PDA:",
+      referralTreasuryAuthorityPda.toBase58()
+    );
+    console.log(
+      "Referral Treasury Token ATA:",
+      referralTreasuryTokenAccount.toBase58()
+    );
+    console.log("AI Agent Token ATA:", aiAgentTokenAccount.toBase58());
+    // --------------------------------------------
+
     // Переопределяем tokenInfoPda, так как он мог потеряться между тестами
-    const [tokenInfoPdaLocal] = PublicKey.findProgramAddressSync(
+    // или если тест 6a не прошел и не присвоил глобальную переменную
+    const [tokenInfoPdaLocalFor6b] = PublicKey.findProgramAddressSync(
       [Buffer.from("token_info"), userTokenMint.toBuffer()],
       tokenCreatorProgram.programId
     );
-    tokenInfoPda = tokenInfoPdaLocal;
-    console.log("Re-derived tokenInfoPda:", tokenInfoPda.toString());
+    tokenInfoPda = tokenInfoPdaLocalFor6b; // Присваиваем глобальной переменной
+    console.log("Re-derived tokenInfoPda for 6b:", tokenInfoPda.toString());
 
     // Получаем total supply ИЗ TokenInfo, созданного в 6a
+    // @ts-ignore
     const tokenInfo = await tokenCreatorProgram.account.tokenInfo.fetch(
-      tokenInfoPda
+      tokenInfoPda // Используем глобальную tokenInfoPda
     );
     const totalSupplyBigInt = BigInt(tokenInfo.totalSupply.toString());
     console.log(
@@ -684,16 +693,29 @@ describe("Token Creation and Distribution Test", () => {
       provider,
       distributorTokenAccount
     );
-    const userBalanceBefore = await getTokenBalance(provider, userTokenAccount);
+    const userBalanceBefore = await getTokenBalance(provider, userTokenAccount); // Баланс userTokenAccount (для wallet.publicKey)
     const curveBalanceBefore = await getTokenBalance(
       provider,
       bondingCurveTokenAccount
     );
+    const aiAgentBalanceBefore = await getTokenBalance(
+      provider,
+      aiAgentTokenAccount
+    );
+    const referralTreasuryBalanceBefore = await getTokenBalance(
+      provider,
+      referralTreasuryTokenAccount
+    );
 
     console.log("Balances BEFORE distribution (6b):");
     console.log("  Distributor:", distributorBalanceBefore.toString());
-    console.log("  User:", userBalanceBefore.toString());
+    console.log("  User (wallet):", userBalanceBefore.toString());
     console.log("  Bonding Curve:", curveBalanceBefore.toString());
+    console.log("  AI Agent:", aiAgentBalanceBefore.toString());
+    console.log(
+      "  Referral Treasury:",
+      referralTreasuryBalanceBefore.toString()
+    );
 
     // Проверяем, что дистрибьютор действительно содержит токены
     assert.equal(
@@ -709,15 +731,26 @@ describe("Token Creation and Distribution Test", () => {
         .accounts({
           mint: userTokenMint,
           distributorAuthority: distributorAuthorityPda,
-          distributorTokenAccount: distributorTokenAccount, // Откуда
-          userAuthority: wallet.publicKey, // Кому 70% + Payer
-          userTokenAccount: userTokenAccount, // Куда 70%
-          bondingCurveAuthority: bondingCurveAuthorityPda, // Авторитет для 30% ATA
-          bondingCurveTokenAccount: bondingCurveTokenAccount, // Куда 30%
+          distributorTokenAccount: distributorTokenAccount,
+          userAuthority: wallet.publicKey, // user_authority (для user_token_account)
+          rentPayer: wallet.publicKey, // rent_payer
+          userTokenAccount: userTokenAccount, // user_token_account (для wallet.publicKey, не основной получатель)
+          bondingCurveAuthority: bondingCurveAuthorityPda,
+          bondingCurveTokenAccount: bondingCurveTokenAccount, // 40% сюда
+          referralTreasuryAuthority: referralTreasuryAuthorityPda,
+          referralTreasuryTokenAccount: referralTreasuryTokenAccount, // 10% сюда
+          aiAgentAuthority: aiAgentAuthority, // Адрес AI агента
+          aiAgentTokenAccount: aiAgentTokenAccount, // 50% сюда
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          referralProgram: REFERRAL_PROGRAM_ID, // ID реферальной программы
         })
+        .preInstructions([
+          anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
+            units: 600_000, // Увеличиваем лимит CU
+          }),
+        ])
         .rpc({ commitment: "confirmed" });
 
       console.log("Distribute tokens tx (6b):", txSignature);
@@ -730,15 +763,27 @@ describe("Token Creation and Distribution Test", () => {
       );
       const userAtaBalanceAfter = await getTokenBalance(
         provider,
-        userTokenAccount
+        userTokenAccount // Баланс userTokenAccount (для wallet.publicKey)
       );
       const bondingCurveAtaBalanceAfter = await getTokenBalance(
         provider,
         bondingCurveTokenAccount
       );
+      const aiAgentTokenAccountBalanceAfter = await getTokenBalance(
+        provider,
+        aiAgentTokenAccount
+      );
+      const referralTreasuryTokenAccountBalanceAfter = await getTokenBalance(
+        provider,
+        referralTreasuryTokenAccount
+      );
 
-      const expectedUserAmount = (totalSupplyBigInt * BigInt(70)) / BigInt(100);
-      const expectedBondingCurveAmount = totalSupplyBigInt - expectedUserAmount; // Остаток
+      const expectedReferralAmount =
+        (totalSupplyBigInt * BigInt(10)) / BigInt(100);
+      const expectedBondingCurveAmount =
+        (totalSupplyBigInt * BigInt(40)) / BigInt(100);
+      const expectedAiAgentAmount =
+        totalSupplyBigInt - expectedReferralAmount - expectedBondingCurveAmount; // 50%
 
       console.log("\nToken Distribution (6b) Results:");
       console.log("--------------------------------");
@@ -748,14 +793,24 @@ describe("Token Creation and Distribution Test", () => {
         "(Expected: 0)"
       );
       console.log(
-        "User ATA Balance:",
+        "User (wallet.publicKey) ATA Balance:", // Этот аккаунт не должен получать токены по новой логике
         userAtaBalanceAfter.toString(),
-        `(Expected: ${expectedUserAmount.toString()})`
+        `(Expected: 0 or initial if pre-existing)`
       );
       console.log(
         "Bonding Curve ATA Balance:",
         bondingCurveAtaBalanceAfter.toString(),
         `(Expected: ${expectedBondingCurveAmount.toString()})`
+      );
+      console.log(
+        "AI Agent ATA Balance:",
+        aiAgentTokenAccountBalanceAfter.toString(),
+        `(Expected: ${expectedAiAgentAmount.toString()})`
+      );
+      console.log(
+        "Referral Treasury ATA Balance:",
+        referralTreasuryTokenAccountBalanceAfter.toString(),
+        `(Expected: ${expectedReferralAmount.toString()})`
       );
 
       // --- ОСНОВНЫЕ ПРОВЕРКИ для 6b ---
@@ -764,15 +819,27 @@ describe("Token Creation and Distribution Test", () => {
         BigInt(0),
         "Distributor ATA should be empty after 6b"
       );
+      // userAtaBalanceAfter should ideally be userBalanceBefore, if it wasn't 0.
+      // For simplicity, if it was 0, it should remain 0.
       assert.equal(
         userAtaBalanceAfter.toString(),
-        expectedUserAmount.toString(),
-        "User ATA balance mismatch after 6b (70%)"
+        userBalanceBefore.toString(), // Expecting it to be unchanged by this specific distribution logic
+        "User (wallet) ATA balance should remain unchanged by this distribution"
       );
       assert.equal(
         bondingCurveAtaBalanceAfter.toString(),
         expectedBondingCurveAmount.toString(),
-        "Bonding Curve ATA balance mismatch after 6b (30%)"
+        "Bonding Curve ATA balance mismatch after 6b (40%)"
+      );
+      assert.equal(
+        aiAgentTokenAccountBalanceAfter.toString(),
+        expectedAiAgentAmount.toString(),
+        "AI Agent ATA balance mismatch after 6b (50%)"
+      );
+      assert.equal(
+        referralTreasuryTokenAccountBalanceAfter.toString(),
+        expectedReferralAmount.toString(),
+        "Referral Treasury ATA balance mismatch after 6b (10%)"
       );
 
       console.log("Token distribution (6b) successful.");
@@ -790,7 +857,6 @@ describe("Token Creation and Distribution Test", () => {
     await sleep(1000);
     const userBalance = await provider.connection.getBalance(wallet.publicKey);
     if (userBalance < 20 * SOL_DECIMALS) {
-      // Увеличил запас SOL на всякий случай
       await airdropSol(wallet.publicKey, 20 * SOL_DECIMALS);
     }
 
@@ -799,10 +865,45 @@ describe("Token Creation and Distribution Test", () => {
     // Проверяем, что нужные переменные userTokenMint, nDollarMint, etc. доступны из предыдущего шага
     assert(userTokenMint, "userTokenMint not set");
     assert(bondingCurvePda, "bondingCurvePda not set");
-    assert(bondingCurveTokenAccount, "bondingCurveTokenAccount not set");
     assert(nDollarTreasury, "nDollarTreasury not set");
     assert(bondingCurveAuthorityPda, "bondingCurveAuthorityPda not set");
 
+    // --- Проверяем/создаём ATA для bondingCurvePda ---
+    const bondingCurveTokenAccount = getAssociatedTokenAddressSync(
+      userTokenMint,
+      bondingCurvePda,
+      true
+    );
+    let needCreateBondingCurveATA = false;
+    try {
+      const ataInfo = await getAccount(
+        provider.connection,
+        bondingCurveTokenAccount
+      );
+      console.log("bondingCurveTokenAccount owner:", ataInfo.owner.toBase58());
+      if (ataInfo.owner.toBase58() !== bondingCurvePda.toBase58()) {
+        throw new Error("bondingCurveTokenAccount owner mismatch!");
+      }
+    } catch (e) {
+      console.log(
+        "bondingCurveTokenAccount does not exist or wrong owner, will create:",
+        e.message
+      );
+      needCreateBondingCurveATA = true;
+    }
+    if (needCreateBondingCurveATA) {
+      const createATAIx = createAssociatedTokenAccountInstruction(
+        wallet.publicKey, // payer
+        bondingCurveTokenAccount,
+        bondingCurvePda, // owner
+        userTokenMint
+      );
+      const tx = new anchor.web3.Transaction().add(createATAIx);
+      const sig = await provider.sendAndConfirm(tx);
+      console.log("Created bondingCurveTokenAccount ATA:", sig);
+    }
+
+    // --- Дальше всё как было ---
     const actualBalanceBeforeInit = await getTokenBalance(
       provider,
       bondingCurveTokenAccount
@@ -810,13 +911,18 @@ describe("Token Creation and Distribution Test", () => {
     console.log(
       `Actual balance in bondingCurveTokenAccount before init: ${actualBalanceBeforeInit.toString()}`
     );
-    const expectedBalance = BigInt(
-      new BN(30_000_000).mul(new BN(10 ** tokenDecimals)).toString()
+    // @ts-ignore
+    const tokenInfoForCurve = await tokenCreatorProgram.account.tokenInfo.fetch(
+      tokenInfoPda // Используем глобальную tokenInfoPda
     );
+    const totalSupplyForCurve = BigInt(
+      tokenInfoForCurve.totalSupply.toString()
+    );
+    const expectedBalance = (totalSupplyForCurve * BigInt(40)) / BigInt(100);
+
     console.log(
-      `Expected balance for bonding curve: ${expectedBalance.toString()}`
+      `Expected balance for bonding curve (40%): ${expectedBalance.toString()}`
     );
-    // Можно добавить assert здесь для ранней проверки
     assert.equal(
       actualBalanceBeforeInit,
       expectedBalance,
@@ -827,31 +933,34 @@ describe("Token Creation and Distribution Test", () => {
       const txSignature = await bondingCurveProgram.methods
         .initializeCurve()
         .accounts({
-          bondingCurve: bondingCurvePda, // PDA состояния (создается)
+          bondingCurve: bondingCurvePda,
           mint: userTokenMint,
           nDollarMint: nDollarMint,
-          bondingCurveTokenAccount: bondingCurveTokenAccount, // ATA с 30% токенов (уже существует)
-          nDollarTreasury: nDollarTreasury, // ATA казны (создается)
-          bondingCurveAuthority: bondingCurveAuthorityPda, // PDA авторитета (для казны)
-          authority: wallet.publicKey, // Payer
+          bondingCurveTokenAccount: bondingCurveTokenAccount,
+          authority: wallet.publicKey,
+          rentPayer: wallet.publicKey,
           systemProgram: SystemProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
           rent: SYSVAR_RENT_PUBKEY,
         })
         .rpc({ commitment: "confirmed" });
 
-      // console.log("Initialize bonding curve tx:", txSignature);
       await provider.connection.confirmTransaction(txSignature, "confirmed");
 
-      // console.log("Workspace Keys:", Object.keys(anchor.workspace));
-      // console.log(
-      //   "Is BondingCurve program defined?",
-      //   !!anchor.workspace.BondingCurve
-      // );
-      // console.log(
-      //   "Bonding Curve Program Object:",
-      //   anchor.workspace.BondingCurve
-      // );
+      // Проверяем, что ATA для nDollarTreasury действительно создан
+      try {
+        const ataInfo = await getAccount(provider.connection, nDollarTreasury);
+        console.log(
+          "nDollarTreasury ATA создан, owner:",
+          ataInfo.owner.toBase58()
+        );
+      } catch (e) {
+        console.error(
+          "nDollarTreasury ATA не найден после initializeCurve!",
+          e.message
+        );
+      }
 
       const curveAccountInfo = await provider.connection.getAccountInfo(
         bondingCurvePda
@@ -865,6 +974,7 @@ describe("Token Creation and Distribution Test", () => {
       console.log(
         "Attempting to fetch BondingCurve account data via Anchor..."
       );
+      // @ts-ignore
       const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
         bondingCurvePda
       );
@@ -913,6 +1023,274 @@ describe("Token Creation and Distribution Test", () => {
     }
   });
 
+  it("7b. Creator buys tokens по спец. цене (creator_buy_tokens)", async () => {
+    await sleep(1000);
+    console.log("\n7b: Creator buys tokens по спец. цене...");
+
+    assert(bondingCurvePda, "bondingCurvePda not set");
+    assert(userTokenMint, "userTokenMint not set");
+
+    // --- Проверка и подготовка баланса для creator_buy_tokens ---
+    const CREATOR_BUY_AMOUNT = new BN(10_000_000).mul(
+      new BN(10 ** tokenDecimals)
+    ); // 10M токенов
+    const CREATOR_BUY_PRICE = 50_000; // 0.00005 * 1_000_000_000 = 50_000 лампортов за токен
+    const CREATOR_BUY_TOTAL_NDOLLAR = new BN(500_000_000_000); // 500 N-Dollar (9 децималов)
+    console.log("CREATOR_BUY_AMOUNT:", CREATOR_BUY_AMOUNT.toString());
+    console.log("CREATOR_BUY_PRICE:", CREATOR_BUY_PRICE);
+    console.log(
+      "CREATOR_BUY_TOTAL_NDOLLAR:",
+      CREATOR_BUY_TOTAL_NDOLLAR.toString()
+    );
+    let userNDollarBalance = await getTokenBalance(
+      provider,
+      userNDollarAccount
+    );
+    console.log(
+      "User N-Dollar balance ДО creator_buy_tokens:",
+      userNDollarBalance.toString()
+    );
+    if (
+      BigInt(userNDollarBalance.toString()) <
+      BigInt(CREATOR_BUY_TOTAL_NDOLLAR.toString())
+    ) {
+      const diff =
+        BigInt(CREATOR_BUY_TOTAL_NDOLLAR.toString()) -
+        BigInt(userNDollarBalance.toString());
+      const solToSwap = new BN(Number(diff) * 2); // swap с запасом
+      console.log(
+        "Недостаточно N-Dollar для creator buy. Делаем swap SOL -> N-Dollar..."
+      );
+      await liquidityPoolProgram.methods
+        .swapSolToNdollar(solToSwap)
+        .accounts({
+          pool: poolPda,
+          ndollarMint: nDollarMint,
+          ndollarVault: poolNDollarAccount,
+          solVault: solVaultPda,
+          user: wallet.publicKey,
+          userNdollar: userNDollarAccount,
+          systemProgram: SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc({ commitment: "confirmed" });
+      userNDollarBalance = await getTokenBalance(provider, userNDollarAccount);
+      console.log(
+        "User N-Dollar balance после swap:",
+        userNDollarBalance.toString()
+      );
+    }
+    // assert.equal(
+    //   userNDollarBalance.toString(),
+    //   CREATOR_BUY_TOTAL_NDOLLAR.toString(),
+    //   "На счету пользователя должно быть ровно 500_000_000_000 лампортов N-Dollar для creator buy"
+    // );
+
+    // Найти escrow PDA и ATA для escrow
+    const [creatorEscrowPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("creator_lock"),
+        userTokenMint.toBuffer(),
+        wallet.publicKey.toBuffer(),
+      ],
+      bondingCurveProgram.programId
+    );
+    const creatorEscrowTokenAccount = getAssociatedTokenAddressSync(
+      userTokenMint,
+      creatorEscrowPda,
+      true
+    );
+
+    // Создать ATA для escrow, если не существует
+    let needCreateEscrowATA = false;
+    try {
+      await getAccount(provider.connection, creatorEscrowTokenAccount);
+    } catch {
+      needCreateEscrowATA = true;
+    }
+    if (needCreateEscrowATA) {
+      const createATAIx = createAssociatedTokenAccountInstruction(
+        wallet.publicKey, // payer
+        creatorEscrowTokenAccount,
+        creatorEscrowPda, // owner
+        userTokenMint
+      );
+      const tx = new anchor.web3.Transaction().add(createATAIx);
+      const sig = await provider.sendAndConfirm(tx);
+      console.log("Created creatorEscrowTokenAccount ATA:", sig);
+    }
+
+    // Вызов creator_buy_tokens
+    // Получаем свежий блокхэш для диагностики
+    const latestBlockhash = await provider.connection.getLatestBlockhash(
+      "confirmed"
+    );
+    console.log("Latest blockhash перед creator_buy_tokens:", latestBlockhash);
+    console.log("Перед вызовом creator_buy_tokens");
+
+    // Логируем децималы токенов (безопасно)
+    function getDecimalsFromParsedAccountInfo(info: any): number | undefined {
+      if (
+        info &&
+        info.value &&
+        info.value.data &&
+        typeof info.value.data === "object" &&
+        "parsed" in info.value.data
+      ) {
+        return info.value.data.parsed?.info?.decimals;
+      }
+      return undefined;
+    }
+    const userTokenMintInfo = await provider.connection.getParsedAccountInfo(
+      userTokenMint
+    );
+    const nDollarMintInfo = await provider.connection.getParsedAccountInfo(
+      nDollarMint
+    );
+    const userTokenDecimals =
+      getDecimalsFromParsedAccountInfo(userTokenMintInfo);
+    const nDollarDecimals = getDecimalsFromParsedAccountInfo(nDollarMintInfo);
+    console.log("userTokenMint decimals:", userTokenDecimals);
+    console.log("nDollarMint decimals:", nDollarDecimals);
+
+    try {
+      const txSignature = await bondingCurveProgram.methods
+        .creatorBuyTokens()
+        .accounts({
+          bondingCurve: bondingCurvePda,
+          mint: userTokenMint,
+          bondingCurveTokenAccount: bondingCurveTokenAccount,
+          nDollarTreasury: nDollarTreasury,
+          creator: wallet.publicKey,
+          creatorNDollarAccount: userNDollarAccount,
+          creatorEscrow: creatorEscrowPda,
+          creatorEscrowTokenAccount: creatorEscrowTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc({ commitment: "confirmed" });
+      console.log("creator_buy_tokens tx:", txSignature);
+      await provider.connection.confirmTransaction(txSignature, "confirmed");
+      // Логируем баланс после покупки по спец. цене
+      const userNDollarBalanceAfter = await getTokenBalance(
+        provider,
+        userNDollarAccount
+      );
+      console.log(
+        "User N-Dollar balance ПОСЛЕ creator_buy_tokens:",
+        userNDollarBalanceAfter.toString()
+      );
+    } catch (error) {
+      console.error("Ошибка при вызове creator_buy_tokens:", error);
+      const latestBlockhashAfter = await provider.connection.getLatestBlockhash(
+        "confirmed"
+      );
+      console.log("Latest blockhash после ошибки:", latestBlockhashAfter);
+      throw error;
+    }
+
+    // Проверить статус
+    // @ts-ignore
+    const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
+      bondingCurvePda
+    );
+    console.log(
+      "creator_buy_status после creator_buy_tokens:",
+      curveAccount.creatorBuyStatus
+    );
+    assert.equal(
+      curveAccount.creatorBuyStatus,
+      1,
+      "creator_buy_status должен быть Claimed (1)"
+    );
+
+    // Проверить escrow токены
+    const escrowBalance = await getTokenBalance(
+      provider,
+      creatorEscrowTokenAccount
+    );
+    console.log("Escrow token balance:", escrowBalance.toString());
+    assert(escrowBalance > 0, "Escrow должен содержать купленные токены");
+
+    // Проверить, что списались N-Dollar
+    const userNDollarBalanceAfter = await getTokenBalance(
+      provider,
+      userNDollarAccount
+    );
+    console.log(
+      "User N-Dollar balance after creator buy:",
+      userNDollarBalanceAfter.toString()
+    );
+    assert(
+      userNDollarBalanceAfter < userNDollarBalance,
+      "N-Dollar должен быть списан"
+    );
+  });
+
+  it("7c. Unlocks creator tokens after lock period", async () => {
+    await sleep(11000); // Ждём 11 секунд (lock период 10 сек)
+    console.log("\n7c: Unlocking creator tokens...");
+
+    // --- Получаем PDA и ATA для escrow ---
+    const [creatorEscrowPda] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("creator_lock"),
+        userTokenMint.toBuffer(),
+        wallet.publicKey.toBuffer(),
+      ],
+      bondingCurveProgram.programId
+    );
+    const creatorEscrowTokenAccount = getAssociatedTokenAddressSync(
+      userTokenMint,
+      creatorEscrowPda,
+      true
+    );
+
+    // --- Проверяем балансы до ---
+    const escrowBalanceBefore = await getTokenBalance(
+      provider,
+      creatorEscrowTokenAccount
+    );
+    const userBalanceBefore = await getTokenBalance(provider, userTokenAccount);
+    console.log("Escrow до:", escrowBalanceBefore.toString());
+    console.log("User до:", userBalanceBefore.toString());
+
+    // --- Вызываем unlock_creator_tokens ---
+    const txSignature = await bondingCurveProgram.methods
+      .unlockCreatorTokens()
+      .accounts({
+        bondingCurve: bondingCurvePda,
+        mint: userTokenMint,
+        recipient: wallet.publicKey,
+        creatorEscrow: creatorEscrowPda,
+        creatorEscrowTokenAccount: creatorEscrowTokenAccount,
+        recipientTokenAccount: userTokenAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc({ commitment: "confirmed" });
+    console.log("Unlock creator tokens tx:", txSignature);
+    await provider.connection.confirmTransaction(txSignature, "confirmed");
+
+    // --- Проверяем балансы после ---
+    const escrowBalanceAfter = await getTokenBalance(
+      provider,
+      creatorEscrowTokenAccount
+    );
+    const userBalanceAfter = await getTokenBalance(provider, userTokenAccount);
+    console.log("Escrow после:", escrowBalanceAfter.toString());
+    console.log("User после:", userBalanceAfter.toString());
+
+    // --- Проверки ---
+    assert.equal(
+      escrowBalanceAfter,
+      BigInt(0),
+      "Escrow должен быть пуст после unlock"
+    );
+    assert(
+      userBalanceAfter > userBalanceBefore,
+      "User должен получить токены после unlock"
+    );
+  });
+
   // Добавляем после других utility functions
   function calculateTokenValue(amount: bigint, curveAccount: any): bigint {
     const PRECISION_FACTOR = BigInt(1_000_000_000_000); // 10^12 как в контракте
@@ -953,6 +1331,7 @@ describe("Token Creation and Distribution Test", () => {
     assert(userTokenAccount, "userTokenAccount not defined");
 
     // Проверяем, что бондинг кривая инициализирована
+    // @ts-ignore
     const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
       bondingCurvePda
     );
@@ -1005,7 +1384,7 @@ describe("Token Creation and Distribution Test", () => {
 
     try {
       const txSignature = await bondingCurveProgram.methods
-        .buy(amountToBuy)
+        .buy(amountToBuy, amountToBuy) // maxTotalCost = amountToBuy для простоты
         .accounts({
           bondingCurve: bondingCurvePda,
           mint: userTokenMint,
@@ -1014,7 +1393,6 @@ describe("Token Creation and Distribution Test", () => {
           nDollarTreasury: nDollarTreasury,
           userTokenAccount: userTokenAccount,
           userNDollarAccount: userNDollarAccount,
-          bondingCurveAuthority: bondingCurveAuthorityPda,
           userAuthority: wallet.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
@@ -1114,6 +1492,7 @@ describe("Token Creation and Distribution Test", () => {
     assert(userTokenAccount, "userTokenAccount not defined");
 
     // Проверяем, что бондинг кривая инициализирована
+    // @ts-ignore
     const curveAccount = await bondingCurveProgram.account.bondingCurve.fetch(
       bondingCurvePda
     );
@@ -1135,6 +1514,7 @@ describe("Token Creation and Distribution Test", () => {
 
     // Сколько токенов продаем (например, половину купленных)
     const amountToSell = new BN(10000000); // Продаем половину
+    const minTotalReturn = new BN(0);
     const amountToSellBigInt = BigInt(amountToSell.toString());
 
     assert(amountToSellBigInt > 0, "Cannot sell zero tokens");
@@ -1168,7 +1548,7 @@ describe("Token Creation and Distribution Test", () => {
 
     try {
       const txSignature = await bondingCurveProgram.methods
-        .sell(amountToSell)
+        .sell(amountToSell, minTotalReturn)
         .accounts({
           bondingCurve: bondingCurvePda,
           mint: userTokenMint,
@@ -1177,7 +1557,6 @@ describe("Token Creation and Distribution Test", () => {
           nDollarTreasury: nDollarTreasury,
           userTokenAccount: userTokenAccount,
           userNDollarAccount: userNDollarAccount,
-          bondingCurveAuthority: bondingCurveAuthorityPda,
           userAuthority: wallet.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
         })

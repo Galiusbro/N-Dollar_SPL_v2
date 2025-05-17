@@ -393,8 +393,8 @@
 //     console.log("\nCreating user token...");
 //     console.log("User token mint pubkey:", userTokenMint.toString());
 
-//     // Определяем необходимую сумму N-Dollar для аренды
-//     const nDollarAmountForRent = new BN(50_000_000); // 50 миллионов ламелей N-Dollar = 0.05 N-Dollar
+//     // Определяем необходимую сумму N-Dollar для аренды - это больше не используется для tokenCreatorProgram
+//     // const nDollarAmountForRent = new BN(50_000_000);
 
 //     // Проверяем баланс N-Dollar перед созданием токена
 //     const userNDollarBalanceBefore = await getTokenBalance(
@@ -405,42 +405,12 @@
 //       `User N-Dollar balance before creation: ${userNDollarBalanceBefore.toString()}`
 //     );
 
-//     // Если баланс недостаточен, пытаемся получить больше N-Dollar
-//     if (userNDollarBalanceBefore < nDollarAmountForRent.toNumber()) {
-//       console.log("Insufficient N-Dollar balance, attempting to get more...");
-//       const solToSwap = new BN(2 * SOL_DECIMALS);
-
-//       const swapTx = await liquidityPoolProgram.methods
-//         .swapSolToNdollar(solToSwap)
-//         .accounts({
-//           pool: poolPda,
-//           ndollarMint: nDollarMint,
-//           ndollarVault: poolNDollarAccount,
-//           solVault: solVaultPda,
-//           user: wallet.publicKey,
-//           userNdollar: userNDollarAccount,
-//           systemProgram: SystemProgram.programId,
-//           tokenProgram: TOKEN_PROGRAM_ID,
-//         })
-//         .rpc({ commitment: "confirmed" });
-
-//       console.log("Additional swap tx:", swapTx);
-//       await provider.connection.confirmTransaction(swapTx, "confirmed");
-
-//       const newBalance = await getTokenBalance(provider, userNDollarAccount);
-//       console.log(`New N-Dollar balance after swap: ${newBalance.toString()}`);
-
-//       if (newBalance < nDollarAmountForRent.toNumber()) {
-//         throw new Error(
-//           `Still insufficient N-Dollar balance. Need ${nDollarAmountForRent.toString()}, have ${newBalance.toString()}`
-//         );
-//       }
-//     }
-
-//     assert(
-//       userNDollarBalanceBefore >= nDollarAmountForRent.toNumber(),
-//       `Insufficient N-Dollar balance. Need ${nDollarAmountForRent.toString()}, have ${userNDollarBalanceBefore.toString()}`
-//     );
+//     // Эта логика для получения N-Dollar для аренды больше не нужна, так как аренда в SOL
+//     // if (userNDollarBalanceBefore < nDollarAmountForRent.toNumber()) { ... }
+//     // assert(
+//     //   userNDollarBalanceBefore >= nDollarAmountForRent.toNumber(),
+//     //   `Insufficient N-Dollar balance. Need ${nDollarAmountForRent.toString()}, have ${userNDollarBalanceBefore.toString()}`
+//     // );
 
 //     // Находим все необходимые PDA и ATA
 //     const [userTokenMetadataPda] = PublicKey.findProgramAddressSync(
@@ -462,20 +432,16 @@
 //       tokenDistributorProgram.programId
 //     );
 
-//     // Добавляем PDA для операционного агента
-
 //     [bondingCurveAuthorityPda] = PublicKey.findProgramAddressSync(
 //       [Buffer.from("bonding_curve"), userTokenMint.toBuffer()],
 //       bondingCurveProgram.programId
 //     );
 
-//     // Исправляем сиды для PDA бондинг кривой в соответствии с lib.rs
 //     [bondingCurvePda] = PublicKey.findProgramAddressSync(
 //       [Buffer.from("bonding_curve"), userTokenMint.toBuffer()],
 //       bondingCurveProgram.programId
 //     );
 
-//     // PDA для казны N-Dollar
 //     [nDollarTreasury] = PublicKey.findProgramAddressSync(
 //       [Buffer.from("n_dollar_treasury"), userTokenMint.toBuffer()],
 //       bondingCurveProgram.programId
@@ -495,6 +461,47 @@
 //       bondingCurveAuthorityPda,
 //       true
 //     );
+
+//     // --- Создаем ATA для userTokenAccount и bondingCurveTokenAccount, если их нет ---
+//     const atasToCreate = [
+//       {
+//         address: userTokenAccount,
+//         owner: wallet.publicKey,
+//         name: "User Token ATA",
+//       },
+//       {
+//         address: bondingCurveTokenAccount,
+//         owner: bondingCurveAuthorityPda,
+//         name: "Bonding Curve Token ATA",
+//         allowOwnerOffCurve: true,
+//       },
+//     ];
+
+//     for (const ataInfo of atasToCreate) {
+//       try {
+//         await getAccount(provider.connection, ataInfo.address);
+//         console.log(
+//           `${ataInfo.name} (${ataInfo.address.toBase58()}) already exists.`
+//         );
+//       } catch (error) {
+//         // Error signifies the account doesn't exist
+//         console.log(
+//           `Creating ${ataInfo.name} (${ataInfo.address.toBase58()})...`
+//         );
+//         const createUserAtaTx = new anchor.web3.Transaction().add(
+//           createAssociatedTokenAccountInstruction(
+//             wallet.publicKey, // payer
+//             ataInfo.address,
+//             ataInfo.owner,
+//             userTokenMint
+//           )
+//         );
+//         const sig = await provider.sendAndConfirm(createUserAtaTx);
+//         console.log(`Create ${ataInfo.name} tx:`, sig);
+//         await sleep(500); // Short delay after creation
+//       }
+//     }
+//     // --- Конец создания ATA ---
 
 //     console.log("User Token Mint:", userTokenMint.toBase58());
 //     console.log("User Token Metadata PDA:", userTokenMetadataPda.toBase58());
@@ -516,63 +523,39 @@
 //       bondingCurveTokenAccount.toBase58()
 //     );
 
-//     // --- ИЗМЕНЕНО: Параметры для createUserToken ---
 //     const name = "My Distributed Token";
 //     const symbol = "DIST";
 //     const uri = "https://example.com/dist-token.json";
-//     const totalSupply = new BN(100_000_000).mul(new BN(10 ** 9)); // 1 миллиард токенов с 9 децималами
-//     // ВАЖНО: Сумма N-Dollar должна быть достаточной для аренды ВСЕХ аккаунтов
-//     // mint, metadata, token_info, user ATA, distributor ATA, bonding curve ATA
-//     // Используем большее значение для надежности теста, например, 0.05 N-Dollar (если децималы 9)
+//     const totalSupply = new BN(100_000_000).mul(new BN(10 ** tokenDecimals)); // 100 миллионов с 9 децималами
 
 //     try {
 //       const txSignature = await tokenCreatorProgram.methods
-//         .createUserToken(name, symbol, uri, totalSupply, nDollarAmountForRent)
+//         .createUserToken(name, symbol, uri, totalSupply)
 //         .accounts({
-//           // Аккаунты создания токена
 //           mint: userTokenMint,
 //           metadata: userTokenMetadataPda,
 //           tokenInfo: tokenInfoPda,
 //           authority: wallet.publicKey,
-
-//           // Аккаунты пула ликвидности
-//           liquidityPool: poolPda,
-//           poolNDollarAccount: poolNDollarAccount,
-//           poolSolAccount: solVaultPda,
-//           userNDollarAccount: userNDollarAccount,
-//           nDollarMint: nDollarMint,
-//           solMint: WRAPPED_SOL_MINT,
-
-//           // Аккаунты дистрибуции
+//           rentPayer: wallet.publicKey,
 //           distributorAuthority: distributorAuthorityPda,
 //           distributorTokenAccount: distributorTokenAccount,
-//           userTokenAccount: userTokenAccount,
-//           bondingCurveAuthority: bondingCurveAuthorityPda,
-//           bondingCurveTokenAccount: bondingCurveTokenAccount,
-
-//           // Системные программы
 //           tokenProgram: TOKEN_PROGRAM_ID,
 //           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
 //           systemProgram: SystemProgram.programId,
 //           rent: SYSVAR_RENT_PUBKEY,
 //           tokenMetadataProgram: METADATA_PROGRAM_ID,
-
-//           // ID программ
-//           liquidityPoolProgram: liquidityPoolProgram.programId,
-//           tokenDistributorProgram: tokenDistributorProgram.programId,
-//           bondingCurveProgram: bondingCurveProgram.programId,
 //         })
 //         .preInstructions([
 //           anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
-//             units: 400_000,
+//             units: 400_000, // Increased CU limit
 //           }),
 //         ])
 //         .signers([userTokenMintKp])
 //         .rpc({ commitment: "confirmed" });
 
 //       console.log("Create user token tx:", txSignature);
+//       await provider.connection.confirmTransaction(txSignature, "confirmed");
 
-//       // --- ИЗМЕНЕНО: Проверка результатов дистрибуции ---
 //       const userTokenMintInfo = await provider.connection.getAccountInfo(
 //         userTokenMint
 //       );
@@ -584,6 +567,7 @@
 //       assert(metadataInfo, "User Token metadata should exist");
 //       const parsedMeta = parseMetadata(metadataInfo.data);
 
+//       // Получаем балансы ПОСЛЕ createUserToken
 //       const userAtaBalance = await getTokenBalance(provider, userTokenAccount);
 //       const bondingCurveAtaBalance = await getTokenBalance(
 //         provider,
@@ -594,35 +578,28 @@
 //         distributorTokenAccount
 //       );
 
-//       const expectedUserAmount = BigInt(
-//         totalSupply.muln(70).divn(100).toString()
-//       );
-//       const expectedBondingCurveAmount = BigInt(
-//         totalSupply.muln(30).divn(100).toString()
-//       );
-
-//       // Проверяем баланс N-Dollar после создания токена
 //       const userNDollarBalanceAfter = await getTokenBalance(
 //         provider,
 //         userNDollarAccount
 //       );
 //       const spentNDollars = userNDollarBalanceBefore - userNDollarBalanceAfter;
 
-//       // Логгирование для отладки
-//       console.log("\nToken Creation Results:");
-//       console.log("----------------------");
-//       logTokenInfo("User Token", parsedMeta, userAtaBalance);
+//       console.log("\nToken Creation Results (after createUserToken):");
+//       console.log("---------------------------------------------");
+//       logTokenInfo("User Token", parsedMeta, null); // Balance will be checked below
 
-//       console.log("\nToken Distribution:");
-//       console.log("-------------------");
-//       console.log("Total Supply:", totalSupply.toString());
+//       console.log("\nToken Balances (after createUserToken):");
+//       console.log("---------------------------------------");
+//       console.log("Total Supply Minted:", totalSupply.toString());
+//       console.log("User ATA Balance:", userAtaBalance.toString());
 //       console.log(
-//         "Bonding Curve Balance (30%):",
+//         "Bonding Curve ATA Balance:",
 //         bondingCurveAtaBalance.toString()
 //       );
-//       console.log("Distributor Balance:", distributorAtaBalance.toString());
-//       console.log("\nN-Dollar Usage:");
-//       console.log("---------------");
+//       console.log("Distributor ATA Balance:", distributorAtaBalance.toString());
+
+//       console.log("\nN-Dollar Usage (for createUserToken):");
+//       console.log("-------------------------------------");
 //       console.log(
 //         "Initial N-Dollar Balance:",
 //         userNDollarBalanceBefore.toString()
@@ -631,32 +608,40 @@
 //         "Final N-Dollar Balance:",
 //         userNDollarBalanceAfter.toString()
 //       );
-//       console.log("Spent N-Dollars:", spentNDollars.toString());
+//       console.log("Spent N-Dollars (should be 0):", spentNDollars.toString());
 
-//       // Проверки
+//       // --- Проверки после createUserToken ---
+//       assert.equal(
+//         distributorAtaBalance,
+//         BigInt(totalSupply.toString()),
+//         "Distributor ATA should hold the total supply"
+//       );
 //       assert.equal(
 //         userAtaBalance,
-//         expectedUserAmount,
-//         "User ATA balance mismatch (70%)"
+//         BigInt(0), // Assuming user ATA was just created or empty
+//         "User ATA should be empty after token creation (before distribution)"
 //       );
 //       assert.equal(
 //         bondingCurveAtaBalance,
-//         expectedBondingCurveAmount,
-//         "Bonding Curve ATA balance mismatch (30%)"
+//         BigInt(0), // Assuming bonding curve ATA was just created or empty
+//         "Bonding Curve ATA should be empty after token creation (before distribution)"
 //       );
-//       assert.equal(
-//         distributorAtaBalance,
-//         BigInt(0),
-//         "Distributor ATA should be empty"
+//       assert.isTrue(
+//         spentNDollars === BigInt(0) || spentNDollars < BigInt(10000), // Allow for very small dust if any
+//         `N-Dollars spent (${spentNDollars}) should be zero or negligible as rent is paid in SOL`
 //       );
 
-//       // Проверяем, что потрачено примерно nDollarAmountForRent (с допуском 10%)
-//       const maxAllowedSpent =
-//         (BigInt(nDollarAmountForRent.toString()) * BigInt(110)) / BigInt(100);
-//       assert(
-//         spentNDollars > 0 && spentNDollars <= maxAllowedSpent,
-//         `N-Dollar spent amount (${spentNDollars}) is outside allowed range (0, ${maxAllowedSpent})`
-//       );
+//       // TODO: Add call to tokenDistributorProgram.methods.distributeTokens(...) here
+
+//       // TODO: Add asserts after tokenDistributorProgram call:
+//       // const expectedUserAmount = BigInt(totalSupply.muln(70).divn(100).toString());
+//       // const expectedBondingCurveAmount = BigInt(totalSupply.muln(30).divn(100).toString());
+//       // const userAtaBalanceAfterDistro = await getTokenBalance(provider, userTokenAccount);
+//       // const bondingCurveAtaBalanceAfterDistro = await getTokenBalance(provider, bondingCurveTokenAccount);
+//       // const distributorAtaBalanceAfterDistro = await getTokenBalance(provider, distributorTokenAccount);
+//       // assert.equal(userAtaBalanceAfterDistro, expectedUserAmount, "User ATA balance mismatch (70%) after distribution");
+//       // assert.equal(bondingCurveAtaBalanceAfterDistro, expectedBondingCurveAmount, "Bonding Curve ATA balance mismatch (30%) after distribution");
+//       // assert.equal(distributorAtaBalanceAfterDistro, BigInt(0),"Distributor ATA should be empty after distribution");
 //     } catch (error) {
 //       console.error("Error creating user token:", error);
 //       if (error.logs) {
